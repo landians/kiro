@@ -3,7 +3,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use tracing::error;
 
-use crate::infrastructure::auth::jwt::TokenKind;
 use crate::interfaces::AppState;
 use crate::interfaces::dto::auth::{
     LogoutSessionResponse, ProtectedSessionResponse, RefreshTokenResponse,
@@ -32,14 +31,9 @@ pub async fn refresh_session(
     Extension(authenticated): Extension<AuthenticatedRefreshToken>,
 ) -> Result<ApiSuccess<RefreshTokenResponse>, AppError> {
     state
-        .infrastructure
+        .services
         .auth
-        .blacklist_service
-        .revoke(
-            TokenKind::Refresh,
-            &authenticated.jti,
-            authenticated.expires_at,
-        )
+        .revoke_refresh_token(&authenticated.jti, authenticated.expires_at)
         .await
         .map_err(|error| {
             error!(
@@ -51,9 +45,8 @@ pub async fn refresh_session(
         })?;
 
     let token_pair = state
-        .infrastructure
+        .services
         .auth
-        .jwt_service
         .issue_token_pair(&authenticated.subject, &authenticated.user_agent)
         .map_err(|_| {
             AppError::new(
@@ -87,21 +80,14 @@ pub async fn logout_session(
     }
 
     state
-        .infrastructure
+        .services
         .auth
-        .blacklist_service
-        .revoke_many(&[
-            crate::infrastructure::auth::blacklist::TokenRevocation {
-                token_kind: TokenKind::Access,
-                jti: &access_token.jti,
-                expires_at: access_token.expires_at,
-            },
-            crate::infrastructure::auth::blacklist::TokenRevocation {
-                token_kind: TokenKind::Refresh,
-                jti: &refresh_token.jti,
-                expires_at: refresh_token.expires_at,
-            },
-        ])
+        .revoke_session_tokens(
+            &access_token.jti,
+            access_token.expires_at,
+            &refresh_token.jti,
+            refresh_token.expires_at,
+        )
         .await
         .map_err(|error| {
             error!(

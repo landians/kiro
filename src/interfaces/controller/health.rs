@@ -24,15 +24,16 @@ pub async fn ready(
     StatusCode,
     Json<crate::interfaces::response::ApiSuccessEnvelope<HealthReadyResponse>>,
 ) {
+    let readiness = state.services.health.readiness();
     let checks = ReadyChecks {
         http_server: DependencyCheck {
             status: "ok",
             message: None,
         },
-        postgres: dependency_check(&state.infrastructure.readiness.postgres),
-        redis: dependency_check(&state.infrastructure.readiness.redis),
+        postgres: dependency_check(&readiness.postgres),
+        redis: dependency_check(&readiness.redis),
     };
-    let is_ready = state.infrastructure.readiness.is_ready();
+    let is_ready = readiness.is_ready();
 
     let response = HealthReadyResponse {
         status: if is_ready { "ready" } else { "not_ready" },

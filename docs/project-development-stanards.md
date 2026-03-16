@@ -1,8 +1,13 @@
-# Nirvana 开发规范与架构约束
+# Kiro 开发规范与架构约束
 
 ## 1. 文档范围
 
-本文档用于细化 Nirvana 项目的编码规范、分层目录规范、接口规范和可维护性要求。它是实现阶段的约束文档，而不是单纯的编码建议。
+本文档用于细化 Kiro 项目的编码规范、分层目录规范、接口规范和可维护性要求。它是实现阶段的约束文档，而不是单纯的编码建议。
+
+补充说明：
+
+- 当前项目的 DDD 分层约束，额外参考 `food-app-server` 的目录组织和依赖方向：[victorsteven/food-app-server](https://github.com/victorsteven/food-app-server)。
+- 参考重点不是照搬语言细节，而是遵循它在 `interfaces -> application -> domain/infrastructure` 之间保持清晰依赖方向、由组合根统一装配依赖的做法。
 
 ## 2. Rust 编码规范
 
@@ -71,15 +76,24 @@
 - 定义事务边界。
 - 组合多个领域对象与仓储接口。
 - 协调同步调用和异步事件发布。
+- 对外暴露按模块划分的 application service，例如 `application/auth.rs`、`application/health.rs`。
+- `application/mod.rs` 只负责导出模块和组合 service 容器，不在 `mod.rs` 内直接堆放某个模块的完整 service 实现。
 
 禁止事项：
 
 - 依赖具体第三方 SDK。
 - 把领域规则硬编码为流程脚本。
+- 在 `application/mod.rs` 中直接定义大体量模块 service 实现。
 
 判断标准：
 
 `application/` 负责“怎么完成一次用例”，但不负责“业务规则本身是什么”。
+
+进一步约束：
+
+- 单个模块的 application service 必须落在独立文件或子目录中，例如 `application/auth.rs` 或 `application/auth/mod.rs`。
+- `interfaces/` 只能依赖 `application` 暴露的 service，不能绕过 service 直接读取基础设施对象。
+- 如果某项能力只是启动期组合容器，而不承载业务语义，应留在组合根或装配代码中，而不是伪装成 application service。
 
 ### 3.3 `domain/`
 
@@ -116,6 +130,8 @@
 - 面向应用层或领域层定义的抽象接口提供实现。
 - 吸收外部系统差异，不把 SDK 细节泄露到上层。
 - 基础设施组件在可能情况下优先采用 Builder 模式构建，特别是涉及多配置项、可选参数、连接池、客户端和第三方适配器初始化的场景。
+- 基础设施目录不再额外引入 `AppInfrastructure`、`AuthInfrastructure` 这类“再包一层”的聚合类型；优先直接暴露清晰的底层构件，例如 `JwtService`、`TokenBlacklistService`、`PgPool`、`redis::Client`。
+- 启动阶段可以返回资源集合或直接完成装配，但资源集合必须表达“已初始化资源”，不能替代 application service 本身。
 
 Builder 模式建议适用于以下对象：
 
@@ -131,6 +147,12 @@ Builder 模式建议适用于以下对象：
 - 便于测试环境按需覆盖部分配置。
 - 有助于保持基础设施初始化逻辑的可扩展性和一致性。
 
+进一步约束：
+
+- `infrastructure/` 的职责是“提供实现”和“完成技术装配”，不是定义新的业务层抽象。
+- 如果某个类型只是把多个基础设施对象机械地重新包成 `XxxInfrastructure`，通常应删除，改为直接传递真实依赖。
+- repository、client、adapter、builder 的命名应直接表达其技术职责，而不是使用泛化的 `manager` 或 `infrastructure` 命名。
+
 ### 3.5 `main.rs`
 
 职责：
@@ -145,6 +167,12 @@ Builder 模式建议适用于以下对象：
 
 - 编写具体业务逻辑。
 - 直接承载模块实现细节。
+
+组合根约束：
+
+- `main.rs` 与启动引导代码是组合根，负责把基础设施对象装配成 application services，再交给 `interfaces/`。
+- 组合根可以调用 `infrastructure` builder、repository、adapter，也可以创建 `application` service，但不能把具体业务规则回写到入口层。
+- `AppState` 只持有配置、application services 和纯运行时元数据，不直接持有底层基础设施对象。
 
 ## 4. 接口规范
 

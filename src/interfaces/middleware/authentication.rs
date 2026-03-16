@@ -63,22 +63,12 @@ pub async fn require_access_token(
         .into_response();
     };
 
-    let validated = match state
-        .infrastructure
-        .auth
-        .jwt_service
-        .validate_token(token, TokenKind::Access)
-    {
+    let validated = match state.services.auth.validate_access_token(token) {
         Ok(validated) => validated,
         Err(error) => return map_jwt_error_to_response(error, trace_id, TokenKind::Access),
     };
 
-    let request_ua_hash = match state
-        .infrastructure
-        .auth
-        .jwt_service
-        .hash_user_agent(user_agent)
-    {
+    let request_ua_hash = match state.services.auth.hash_user_agent(user_agent) {
         Ok(ua_hash) => ua_hash,
         Err(error) => return map_jwt_error_to_response(error, trace_id, TokenKind::Access),
     };
@@ -88,10 +78,9 @@ pub async fn require_access_token(
     }
 
     let is_revoked = match state
-        .infrastructure
+        .services
         .auth
-        .blacklist_service
-        .is_revoked(TokenKind::Access, &validated.jti)
+        .is_access_token_revoked(&validated.jti)
         .await
     {
         Ok(is_revoked) => is_revoked,
@@ -156,22 +145,12 @@ pub async fn require_refresh_token(
     };
     let user_agent = user_agent.to_owned();
 
-    let validated = match state
-        .infrastructure
-        .auth
-        .jwt_service
-        .validate_token(token, TokenKind::Refresh)
-    {
+    let validated = match state.services.auth.validate_refresh_token(token) {
         Ok(validated) => validated,
         Err(error) => return map_jwt_error_to_response(error, trace_id, TokenKind::Refresh),
     };
 
-    let request_ua_hash = match state
-        .infrastructure
-        .auth
-        .jwt_service
-        .hash_user_agent(&user_agent)
-    {
+    let request_ua_hash = match state.services.auth.hash_user_agent(&user_agent) {
         Ok(ua_hash) => ua_hash,
         Err(error) => return map_jwt_error_to_response(error, trace_id, TokenKind::Refresh),
     };
@@ -185,10 +164,9 @@ pub async fn require_refresh_token(
     }
 
     let is_revoked = match state
-        .infrastructure
+        .services
         .auth
-        .blacklist_service
-        .is_revoked(TokenKind::Refresh, &validated.jti)
+        .is_refresh_token_revoked(&validated.jti)
         .await
     {
         Ok(is_revoked) => is_revoked,

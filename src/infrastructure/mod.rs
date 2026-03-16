@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use redis::Client as RedisClient;
@@ -11,28 +12,34 @@ pub mod auth;
 pub mod persistence;
 
 #[derive(Clone)]
-pub struct AppInfrastructure {
+pub struct BootstrapResources {
     #[allow(dead_code)]
     pub postgres_pool: Option<PgPool>,
     #[allow(dead_code)]
     pub redis_client: Option<RedisClient>,
-    pub auth: auth::AuthInfrastructure,
+    pub jwt_service: auth::jwt::JwtService,
+    pub token_blacklist_service: auth::blacklist::TokenBlacklistService,
     pub readiness: Arc<ReadinessState>,
 }
 
-impl AppInfrastructure {
+impl BootstrapResources {
     #[cfg(test)]
     pub fn ready_for_test(config: &AppConfig) -> Self {
         Self {
             postgres_pool: None,
             redis_client: None,
-            auth: auth::AuthInfrastructure::new(
-                config.auth.clone(),
-                None,
-                config.redis.connect_timeout_seconds,
-                config.redis.key_prefix.clone(),
+            jwt_service: auth::jwt::JwtServiceBuilder::new(config.auth.clone())
+                .build()
+                .expect("test jwt service should build"),
+            token_blacklist_service: auth::blacklist::TokenBlacklistServiceBuilder::new(
+                config.auth.blacklist_mode,
             )
-            .expect("test auth infrastructure should build"),
+            .with_redis_client(
+                None,
+                Duration::from_secs(config.redis.connect_timeout_seconds),
+            )
+            .with_key_prefix(config.redis.key_prefix.clone())
+            .build(),
             readiness: Arc::new(ReadinessState::all_ready()),
         }
     }
@@ -46,13 +53,18 @@ impl AppInfrastructure {
         Self {
             postgres_pool: None,
             redis_client: None,
-            auth: auth::AuthInfrastructure::new(
-                config.auth.clone(),
-                None,
-                config.redis.connect_timeout_seconds,
-                config.redis.key_prefix.clone(),
+            jwt_service: auth::jwt::JwtServiceBuilder::new(config.auth.clone())
+                .build()
+                .expect("test jwt service should build"),
+            token_blacklist_service: auth::blacklist::TokenBlacklistServiceBuilder::new(
+                config.auth.blacklist_mode,
             )
-            .expect("test auth infrastructure should build"),
+            .with_redis_client(
+                None,
+                Duration::from_secs(config.redis.connect_timeout_seconds),
+            )
+            .with_key_prefix(config.redis.key_prefix.clone())
+            .build(),
             readiness: Arc::new(ReadinessState {
                 postgres: DependencyHealth::not_ready(postgres_reason),
                 redis: DependencyHealth::not_ready(redis_reason),
@@ -117,15 +129,18 @@ impl DependencyHealth {
     }
 }
 
-pub async fn bootstrap(config: &AppConfig) -> Result<AppInfrastructure> {
+pub async fn bootstrap(config: &AppConfig) -> Result<BootstrapResources> {
     let postgres = bootstrap_postgres(config).await;
     let redis = bootstrap_redis(config).await;
-    let auth = auth::AuthInfrastructure::new(
-        config.auth.clone(),
-        redis.client.clone(),
-        config.redis.connect_timeout_seconds,
-        config.redis.key_prefix.clone(),
-    )?;
+    let jwt_service = auth::jwt::JwtServiceBuilder::new(config.auth.clone()).build()?;
+    let token_blacklist_service =
+        auth::blacklist::TokenBlacklistServiceBuilder::new(config.auth.blacklist_mode)
+            .with_redis_client(
+                redis.client.clone(),
+                Duration::from_secs(config.redis.connect_timeout_seconds),
+            )
+            .with_key_prefix(config.redis.key_prefix.clone())
+            .build();
 
     let readiness = Arc::new(ReadinessState {
         postgres: postgres.health,
@@ -138,10 +153,11 @@ pub async fn bootstrap(config: &AppConfig) -> Result<AppInfrastructure> {
         warn!("application started with one or more dependencies not ready");
     }
 
-    Ok(AppInfrastructure {
+    Ok(BootstrapResources {
         postgres_pool: postgres.pool,
         redis_client: redis.client,
-        auth,
+        jwt_service,
+        token_blacklist_service,
         readiness,
     })
 }

@@ -5,9 +5,12 @@ use axum::Router;
 use axum::middleware as axum_middleware;
 use axum::routing::{get, post};
 
+use crate::application::AppServices;
 use crate::config::AppConfig;
-use crate::infrastructure::AppInfrastructure;
+use crate::interfaces::controller::{auth as auth_controller, health as health_controller};
+use crate::interfaces::middleware::authentication::{require_access_token, require_refresh_token};
 use crate::interfaces::middleware::trace_id::RequestTrace;
+use crate::interfaces::middleware::trace_id::trace_id_middleware;
 use crate::interfaces::response::AppError;
 
 pub mod controller;
@@ -18,57 +21,65 @@ pub mod response;
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
-    pub infrastructure: AppInfrastructure,
+    pub services: AppServices,
     pub started_at: Instant,
 }
 
 impl AppState {
-    pub fn new(config: AppConfig, infrastructure: AppInfrastructure) -> Self {
+    pub fn new(config: AppConfig, services: AppServices) -> Self {
         Self {
             config,
-            infrastructure,
+            services,
             started_at: Instant::now(),
         }
     }
 }
 
 pub fn build_router(state: AppState) -> Router {
-    let protected_routes = Router::new()
-        .route("/auth/protected", get(controller::auth::protected_session))
+    Router::new()
+        .nest("/health", build_health_routes())
+        .nest("/auth", build_auth_routes(state.clone()))
+        .fallback(not_found)
+        .layer(axum_middleware::from_fn(trace_id_middleware))
+        .with_state(state)
+}
+
+fn build_health_routes() -> Router<AppState> {
+    Router::new()
+        .route("/live", get(health_controller::live))
+        .route("/ready", get(health_controller::ready))
+}
+
+fn build_auth_routes(state: AppState) -> Router<AppState> {
+    let access_routes = Router::new()
+        .route("/protected", get(auth_controller::protected_session))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
-            crate::interfaces::middleware::authentication::require_access_token,
+            require_access_token,
         ));
 
     let refresh_routes = Router::new()
-        .route("/auth/refresh", post(controller::auth::refresh_session))
+        .route("/refresh", post(auth_controller::refresh_session))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
-            crate::interfaces::middleware::authentication::require_refresh_token,
+            require_refresh_token,
         ));
 
-    let logout_routes = Router::new()
-        .route("/auth/logout", post(controller::auth::logout_session))
+    let session_routes = Router::new()
+        .route("/logout", post(auth_controller::logout_session))
         .route_layer(axum_middleware::from_fn_with_state(
             state.clone(),
-            crate::interfaces::middleware::authentication::require_refresh_token,
+            require_refresh_token,
         ))
         .route_layer(axum_middleware::from_fn_with_state(
-            state.clone(),
-            crate::interfaces::middleware::authentication::require_access_token,
+            state,
+            require_access_token,
         ));
 
     Router::new()
-        .route("/health/live", get(controller::health::live))
-        .route("/health/ready", get(controller::health::ready))
-        .merge(protected_routes)
+        .merge(access_routes)
         .merge(refresh_routes)
-        .merge(logout_routes)
-        .fallback(not_found)
-        .layer(axum_middleware::from_fn(
-            crate::interfaces::middleware::trace_id::trace_id_middleware,
-        ))
-        .with_state(state)
+        .merge(session_routes)
 }
 
 async fn not_found(Extension(request_trace): Extension<RequestTrace>) -> AppError {
@@ -86,10 +97,11 @@ mod tests {
     use tower::ServiceExt;
 
     use super::build_router;
+    use crate::application::AppServices;
+    use crate::application::auth::AuthService;
+    use crate::application::health::HealthService;
     use crate::config::AppConfig;
-    use crate::infrastructure::auth::AuthInfrastructure;
-    use crate::infrastructure::auth::jwt::TokenKind;
-    use crate::infrastructure::{AppInfrastructure, DependencyHealth, ReadinessState};
+    use crate::infrastructure::{BootstrapResources, DependencyHealth, ReadinessState};
     use crate::interfaces::AppState;
     use crate::interfaces::middleware::authentication::REFRESH_TOKEN_HEADER_NAME;
     use crate::interfaces::middleware::trace_id::TRACE_ID_HEADER_NAME;
@@ -113,22 +125,32 @@ mod tests {
 
     fn ready_test_state() -> AppState {
         let config = test_config();
+        let resources = BootstrapResources::ready_for_test(&config);
+        let services = AppServices::new(
+            AuthService::new(resources.jwt_service, resources.token_blacklist_service),
+            HealthService::new(resources.readiness),
+        );
         AppState {
-            infrastructure: AppInfrastructure::ready_for_test(&config),
             config,
+            services,
             started_at: std::time::Instant::now(),
         }
     }
 
     fn not_ready_test_state() -> AppState {
         let config = test_config();
+        let resources = BootstrapResources::not_ready_for_test(
+            &config,
+            "postgres unavailable",
+            "redis unavailable",
+        );
+        let services = AppServices::new(
+            AuthService::new(resources.jwt_service, resources.token_blacklist_service),
+            HealthService::new(resources.readiness),
+        );
         AppState {
-            infrastructure: AppInfrastructure::not_ready_for_test(
-                &config,
-                "postgres unavailable",
-                "redis unavailable",
-            ),
             config,
+            services,
             started_at: std::time::Instant::now(),
         }
     }
@@ -282,9 +304,8 @@ mod tests {
     async fn protected_route_allows_valid_access_token() {
         let state = ready_test_state();
         let token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let app = build_router(state);
@@ -340,9 +361,8 @@ mod tests {
     async fn protected_route_rejects_refresh_token() {
         let state = ready_test_state();
         let token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_refresh_token("user_42", "kiro-test-agent")
             .expect("refresh token should issue");
         let app = build_router(state);
@@ -372,9 +392,8 @@ mod tests {
     async fn protected_route_rejects_user_agent_mismatch() {
         let state = ready_test_state();
         let token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let app = build_router(state);
@@ -404,20 +423,14 @@ mod tests {
     async fn protected_route_rejects_revoked_token() {
         let state = ready_test_state();
         let token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         state
-            .infrastructure
+            .services
             .auth
-            .blacklist_service
-            .revoke(
-                crate::infrastructure::auth::jwt::TokenKind::Access,
-                &token.jti,
-                token.expires_at,
-            )
+            .revoke_access_token(&token.jti, token.expires_at)
             .await
             .expect("token revoke should succeed");
         let app = build_router(state);
@@ -459,28 +472,40 @@ mod tests {
             ),
             ("BLACKLIST_MODE", "redis"),
         ]);
-        let auth = AuthInfrastructure::new(
-            config.auth.clone(),
-            None,
-            config.redis.connect_timeout_seconds,
-            config.redis.key_prefix.clone(),
-        )
-        .expect("auth infrastructure should build");
-        let token = auth
-            .jwt_service
+        let resources = BootstrapResources {
+            postgres_pool: None,
+            redis_client: None,
+            jwt_service: crate::infrastructure::auth::jwt::JwtServiceBuilder::new(
+                config.auth.clone(),
+            )
+            .build()
+            .expect("jwt service should build"),
+            token_blacklist_service:
+                crate::infrastructure::auth::blacklist::TokenBlacklistServiceBuilder::new(
+                    config.auth.blacklist_mode,
+                )
+                .with_redis_client(
+                    None,
+                    std::time::Duration::from_secs(config.redis.connect_timeout_seconds),
+                )
+                .with_key_prefix(config.redis.key_prefix.clone())
+                .build(),
+            readiness: Arc::new(ReadinessState {
+                postgres: DependencyHealth::ready(),
+                redis: DependencyHealth::not_ready("redis unavailable"),
+            }),
+        };
+        let services = AppServices::new(
+            AuthService::new(resources.jwt_service, resources.token_blacklist_service),
+            HealthService::new(resources.readiness),
+        );
+        let token = services
+            .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let state = AppState {
-            infrastructure: AppInfrastructure {
-                postgres_pool: None,
-                redis_client: None,
-                auth,
-                readiness: Arc::new(ReadinessState {
-                    postgres: DependencyHealth::ready(),
-                    redis: DependencyHealth::not_ready("redis unavailable"),
-                }),
-            },
             config,
+            services,
             started_at: std::time::Instant::now(),
         };
         let app = build_router(state);
@@ -511,9 +536,8 @@ mod tests {
     async fn refresh_route_rotates_token_pair() {
         let state = ready_test_state();
         let refresh_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_refresh_token("user_42", "kiro-test-agent")
             .expect("refresh token should issue");
         let previous_refresh_jti = refresh_token.jti.clone();
@@ -544,18 +568,16 @@ mod tests {
             .expect("refresh token should be string");
         assert!(
             state
-                .infrastructure
+                .services
                 .auth
-                .blacklist_service
-                .is_revoked(TokenKind::Refresh, &previous_refresh_jti)
+                .is_refresh_token_revoked(&previous_refresh_jti)
                 .await
                 .expect("blacklist lookup should succeed")
         );
         let validated = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
-            .validate_token(new_refresh_token, TokenKind::Refresh)
+            .validate_refresh_token(new_refresh_token)
             .expect("new refresh token should validate");
         assert_eq!(validated.subject, "user_42");
     }
@@ -589,9 +611,8 @@ mod tests {
     async fn refresh_route_rejects_access_token_in_refresh_header() {
         let state = ready_test_state();
         let access_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let app = build_router(state);
@@ -622,20 +643,14 @@ mod tests {
     async fn refresh_route_rejects_revoked_refresh_token() {
         let state = ready_test_state();
         let refresh_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_refresh_token("user_42", "kiro-test-agent")
             .expect("refresh token should issue");
         state
-            .infrastructure
+            .services
             .auth
-            .blacklist_service
-            .revoke(
-                TokenKind::Refresh,
-                &refresh_token.jti,
-                refresh_token.expires_at,
-            )
+            .revoke_refresh_token(&refresh_token.jti, refresh_token.expires_at)
             .await
             .expect("token revoke should succeed");
         let app = build_router(state);
@@ -666,9 +681,8 @@ mod tests {
     async fn logout_route_revokes_access_and_refresh_tokens() {
         let state = ready_test_state();
         let token_pair = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_token_pair("user_42", "kiro-test-agent")
             .expect("token pair should issue");
         let access_jti = token_pair.access_token.jti.clone();
@@ -704,19 +718,17 @@ mod tests {
         assert_eq!(json["data"]["refresh_token_revoked"], true);
         assert!(
             state
-                .infrastructure
+                .services
                 .auth
-                .blacklist_service
-                .is_revoked(TokenKind::Access, &access_jti)
+                .is_access_token_revoked(&access_jti)
                 .await
                 .expect("blacklist lookup should succeed")
         );
         assert!(
             state
-                .infrastructure
+                .services
                 .auth
-                .blacklist_service
-                .is_revoked(TokenKind::Refresh, &refresh_jti)
+                .is_refresh_token_revoked(&refresh_jti)
                 .await
                 .expect("blacklist lookup should succeed")
         );
@@ -726,9 +738,8 @@ mod tests {
     async fn logout_route_rejects_missing_refresh_token_header() {
         let state = ready_test_state();
         let access_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let app = build_router(state);
@@ -759,15 +770,13 @@ mod tests {
     async fn logout_route_rejects_subject_mismatch() {
         let state = ready_test_state();
         let access_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
         let refresh_token = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_refresh_token("user_99", "kiro-test-agent")
             .expect("refresh token should issue");
         let access_jti = access_token.jti.clone();
@@ -797,19 +806,17 @@ mod tests {
         assert_eq!(json["error"]["code"], "token_subject_mismatch");
         assert!(
             !state
-                .infrastructure
+                .services
                 .auth
-                .blacklist_service
-                .is_revoked(TokenKind::Access, &access_jti)
+                .is_access_token_revoked(&access_jti)
                 .await
                 .expect("blacklist lookup should succeed")
         );
         assert!(
             !state
-                .infrastructure
+                .services
                 .auth
-                .blacklist_service
-                .is_revoked(TokenKind::Refresh, &refresh_jti)
+                .is_refresh_token_revoked(&refresh_jti)
                 .await
                 .expect("blacklist lookup should succeed")
         );
@@ -819,9 +826,8 @@ mod tests {
     async fn revoked_tokens_are_rejected_after_logout() {
         let state = ready_test_state();
         let token_pair = state
-            .infrastructure
+            .services
             .auth
-            .jwt_service
             .issue_token_pair("user_42", "kiro-test-agent")
             .expect("token pair should issue");
 
