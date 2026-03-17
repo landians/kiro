@@ -32,6 +32,15 @@ This file defines the default execution rules for any agent working in this repo
 - Prefer `?`, `let-else`, and small helper functions over deeply nested `match` or `if let` control flow.
 - When a function mixes validation, loading, transformation, persistence, and observability, keep the top-level function as step orchestration only and move details into clearly named private helpers.
 - Name complex intermediate values before calling downstream functions; avoid deeply nested constructor calls inside a single expression.
+- Before a non-trivial call, first construct a semantic variable such as `request`, `command`, `new_user`, `new_identity`, `authorization_header`, or `email`, then pass that variable into the call.
+- Do not keep nested construction and invocation fused together when a named value would make the code easier to read or debug.
+- Explicit anti-patterns include:
+  - `.create(NewUser::new(...))`
+  - `.create(NewUserIdentity::new(...))`
+  - `.header("authorization", format!(...))`
+  - `.bind(format!(...))`
+  - `Some(Service::new(...))` when the service instance can be named first and then wrapped
+  - struct field initialization that directly embeds `Arc::new(Mutex::new(...))` or similar nested technical construction without first naming the shared state
 - If an API or repository exposes batch semantics such as `batch_*` or `m*`, do not silently degrade it into N single remote calls unless the backend truly lacks batch capability and the code comments explain the exception.
 - Keep logs, metrics, and trace enrichment concentrated at clear entry/exit points instead of scattering observability code through every branch.
 - Do not over-flatten by splitting code into many trivial 1-2 line functions or by building unreadable long `map/and_then` chains; readability and correctness remain the primary goal.
