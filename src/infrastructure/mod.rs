@@ -13,6 +13,8 @@ pub mod persistence;
 
 #[derive(Clone)]
 pub struct BootstrapResources {
+    pub google_oauth_client: Option<auth::google::GoogleOAuthClient>,
+    pub google_oauth_state_service: Option<auth::google_state::GoogleOAuthStateService>,
     #[allow(dead_code)]
     pub postgres_pool: Option<PgPool>,
     #[allow(dead_code)]
@@ -26,6 +28,8 @@ impl BootstrapResources {
     #[cfg(test)]
     pub fn ready_for_test(config: &AppConfig) -> Self {
         Self {
+            google_oauth_client: None,
+            google_oauth_state_service: None,
             postgres_pool: None,
             redis_client: None,
             jwt_service: auth::jwt::JwtServiceBuilder::new(config.auth.clone())
@@ -51,6 +55,8 @@ impl BootstrapResources {
         redis_reason: &str,
     ) -> Self {
         Self {
+            google_oauth_client: None,
+            google_oauth_state_service: None,
             postgres_pool: None,
             redis_client: None,
             jwt_service: auth::jwt::JwtServiceBuilder::new(config.auth.clone())
@@ -132,6 +138,10 @@ impl DependencyHealth {
 pub async fn bootstrap(config: &AppConfig) -> Result<BootstrapResources> {
     let postgres = bootstrap_postgres(config).await;
     let redis = bootstrap_redis(config).await;
+    let google_oauth_client =
+        auth::google::GoogleOAuthClientBuilder::new(config.auth.google.clone()).build()?;
+    let google_oauth_state_service =
+        auth::google_state::GoogleOAuthStateServiceBuilder::new(config.auth.clone()).build()?;
     let jwt_service = auth::jwt::JwtServiceBuilder::new(config.auth.clone()).build()?;
     let token_blacklist_service =
         auth::blacklist::TokenBlacklistServiceBuilder::new(config.auth.blacklist_mode)
@@ -154,6 +164,8 @@ pub async fn bootstrap(config: &AppConfig) -> Result<BootstrapResources> {
     }
 
     Ok(BootstrapResources {
+        google_oauth_client,
+        google_oauth_state_service,
         postgres_pool: postgres.pool,
         redis_client: redis.client,
         jwt_service,

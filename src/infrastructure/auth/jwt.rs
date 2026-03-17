@@ -257,7 +257,7 @@ fn current_unix_timestamp() -> Result<u64, JwtError> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{AuthConfig, BlacklistMode};
+    use crate::config::{AuthConfig, BlacklistMode, GoogleAuthConfig};
 
     use super::{JwtServiceBuilder, TokenKind};
 
@@ -269,6 +269,17 @@ mod tests {
             jwt_access_token_ttl_seconds: 7200,
             jwt_refresh_token_ttl_seconds: 1296000,
             blacklist_mode: BlacklistMode::Memory,
+            google: GoogleAuthConfig {
+                enabled: false,
+                client_id: None,
+                client_secret: None,
+                redirect_uri: None,
+                authorization_url: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),
+                token_url: "https://oauth2.googleapis.com/token".to_owned(),
+                user_info_url: "https://openidconnect.googleapis.com/v1/userinfo".to_owned(),
+                http_timeout_seconds: 10,
+                oauth_state_ttl_seconds: 600,
+            },
         }
     }
 

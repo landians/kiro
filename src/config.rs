@@ -22,6 +22,12 @@ const DEFAULT_JWT_AUDIENCE: &str = "kiro-api";
 const DEFAULT_JWT_ACCESS_TOKEN_TTL_SECONDS: u64 = 60 * 60 * 2;
 const DEFAULT_JWT_REFRESH_TOKEN_TTL_SECONDS: u64 = 60 * 60 * 24 * 15;
 const DEFAULT_BLACKLIST_MODE: &str = "redis";
+const DEFAULT_GOOGLE_AUTH_ENABLED: bool = false;
+const DEFAULT_GOOGLE_AUTHORIZATION_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const DEFAULT_GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+const DEFAULT_GOOGLE_USER_INFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
+const DEFAULT_GOOGLE_HTTP_TIMEOUT_SECONDS: u64 = 10;
+const DEFAULT_GOOGLE_OAUTH_STATE_TTL_SECONDS: u64 = 60 * 10;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppConfig {
@@ -163,6 +169,45 @@ impl AppConfig {
             .unwrap_or(DEFAULT_BLACKLIST_MODE)
             .parse::<BlacklistMode>()
             .context("invalid BLACKLIST_MODE value")?;
+        let google_auth_enabled =
+            parse_bool(vars, "GOOGLE_AUTH_ENABLED", DEFAULT_GOOGLE_AUTH_ENABLED)?;
+        let google_client_id = optional_var(vars, "GOOGLE_CLIENT_ID").map(str::to_owned);
+        let google_client_secret = optional_var(vars, "GOOGLE_CLIENT_SECRET").map(str::to_owned);
+        let google_redirect_uri = optional_var(vars, "GOOGLE_REDIRECT_URI").map(str::to_owned);
+        let google_authorization_url = optional_var(vars, "GOOGLE_AUTHORIZATION_URL")
+            .unwrap_or(DEFAULT_GOOGLE_AUTHORIZATION_URL)
+            .to_owned();
+        let google_token_url = optional_var(vars, "GOOGLE_TOKEN_URL")
+            .unwrap_or(DEFAULT_GOOGLE_TOKEN_URL)
+            .to_owned();
+        let google_user_info_url = optional_var(vars, "GOOGLE_USER_INFO_URL")
+            .unwrap_or(DEFAULT_GOOGLE_USER_INFO_URL)
+            .to_owned();
+        let google_http_timeout_seconds = parse_u64(
+            vars,
+            "GOOGLE_HTTP_TIMEOUT_SECONDS",
+            DEFAULT_GOOGLE_HTTP_TIMEOUT_SECONDS,
+        )?;
+        let google_oauth_state_ttl_seconds = parse_u64(
+            vars,
+            "GOOGLE_OAUTH_STATE_TTL_SECONDS",
+            DEFAULT_GOOGLE_OAUTH_STATE_TTL_SECONDS,
+        )?;
+
+        let has_google_credentials = google_client_id.is_some()
+            || google_client_secret.is_some()
+            || google_redirect_uri.is_some();
+        if google_auth_enabled || has_google_credentials {
+            if google_client_id.is_none() {
+                bail!("GOOGLE_CLIENT_ID is required when google auth is enabled");
+            }
+            if google_client_secret.is_none() {
+                bail!("GOOGLE_CLIENT_SECRET is required when google auth is enabled");
+            }
+            if google_redirect_uri.is_none() {
+                bail!("GOOGLE_REDIRECT_URI is required when google auth is enabled");
+            }
+        }
 
         Ok(Self {
             service: ServiceConfig {
@@ -197,6 +242,17 @@ impl AppConfig {
                 jwt_access_token_ttl_seconds,
                 jwt_refresh_token_ttl_seconds,
                 blacklist_mode,
+                google: GoogleAuthConfig {
+                    enabled: google_auth_enabled,
+                    client_id: google_client_id,
+                    client_secret: google_client_secret,
+                    redirect_uri: google_redirect_uri,
+                    authorization_url: google_authorization_url,
+                    token_url: google_token_url,
+                    user_info_url: google_user_info_url,
+                    http_timeout_seconds: google_http_timeout_seconds,
+                    oauth_state_ttl_seconds: google_oauth_state_ttl_seconds,
+                },
             },
         })
     }
@@ -293,6 +349,20 @@ pub struct AuthConfig {
     pub jwt_access_token_ttl_seconds: u64,
     pub jwt_refresh_token_ttl_seconds: u64,
     pub blacklist_mode: BlacklistMode,
+    pub google: GoogleAuthConfig,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GoogleAuthConfig {
+    pub enabled: bool,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub authorization_url: String,
+    pub token_url: String,
+    pub user_info_url: String,
+    pub http_timeout_seconds: u64,
+    pub oauth_state_ttl_seconds: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -418,6 +488,12 @@ mod tests {
         assert_eq!(config.redis.key_prefix, "kiro:local");
         assert_eq!(config.auth.jwt_access_token_ttl_seconds, 7200);
         assert_eq!(config.auth.blacklist_mode, BlacklistMode::Redis);
+        assert!(!config.auth.google.enabled);
+        assert_eq!(
+            config.auth.google.authorization_url,
+            "https://accounts.google.com/o/oauth2/v2/auth"
+        );
+        assert_eq!(config.auth.google.oauth_state_ttl_seconds, 600);
     }
 
     #[test]
@@ -507,6 +583,31 @@ mod tests {
             error
                 .to_string()
                 .contains("missing required jwt signing configuration")
+        );
+    }
+
+    #[test]
+    fn fails_when_google_auth_is_enabled_without_required_credentials() {
+        let vars = map_from_pairs(&[
+            ("RUNTIME_ENV", "local"),
+            (
+                "POSTGRES_URL",
+                "postgres://postgres:postgres@127.0.0.1:5432/kiro",
+            ),
+            ("REDIS_URL", "redis://127.0.0.1:6379"),
+            (
+                "JWT_SIGNING_KEY",
+                "test_signing_key_that_is_long_enough_123",
+            ),
+            ("GOOGLE_AUTH_ENABLED", "true"),
+            ("GOOGLE_CLIENT_ID", "google-client-id"),
+        ]);
+        let error = AppConfig::from_map(&vars).expect_err("config should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("GOOGLE_CLIENT_SECRET is required when google auth is enabled")
         );
     }
 }

@@ -6,6 +6,8 @@ use sqlx::postgres::PgPoolOptions;
 
 use crate::config::PostgresConfig;
 
+pub mod accounts;
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub struct PostgresPoolBuilder {
