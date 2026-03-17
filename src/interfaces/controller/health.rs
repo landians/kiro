@@ -7,7 +7,7 @@ use crate::interfaces::AppState;
 use crate::interfaces::dto::health::{
     DependencyCheck, HealthLiveResponse, HealthReadyResponse, ReadyChecks,
 };
-use crate::interfaces::response::ApiSuccess;
+use crate::interfaces::response::{ApiSuccess, ApiSuccessEnvelope};
 
 pub async fn live(State(state): State<AppState>) -> ApiSuccess<HealthLiveResponse> {
     ApiSuccess::ok(HealthLiveResponse {
@@ -20,10 +20,7 @@ pub async fn live(State(state): State<AppState>) -> ApiSuccess<HealthLiveRespons
 
 pub async fn ready(
     State(state): State<AppState>,
-) -> (
-    StatusCode,
-    Json<crate::interfaces::response::ApiSuccessEnvelope<HealthReadyResponse>>,
-) {
+) -> (StatusCode, Json<ApiSuccessEnvelope<HealthReadyResponse>>) {
     let readiness = state.services.health.readiness();
     let checks = ReadyChecks {
         http_server: DependencyCheck {
@@ -51,7 +48,7 @@ pub async fn ready(
 
     (
         status,
-        Json(crate::interfaces::response::ApiSuccessEnvelope {
+        Json(ApiSuccessEnvelope {
             success: true,
             data: response,
         }),

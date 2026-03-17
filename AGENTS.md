@@ -21,6 +21,9 @@ This file defines the default execution rules for any agent working in this repo
 - `anyhow` is allowed only for application/bootstrap/tooling error aggregation, not as the long-term domain error model.
 - Error types should retain enough structure for logging, HTTP responses, alerting, and debugging.
 - Preserve original error semantics when crossing layers; do not collapse everything into context-free strings in the middle of the call chain.
+- For HTTP APIs, prefer defining interface-layer wrapper error types and implementing `IntoResponse` on those wrapper types, instead of scattering `AppError` mapping logic across controllers.
+- Do not directly call methods, functions, or values via `crate::...` root-qualified paths inside implementation code when a local `use` import or a module-local path can express the dependency more clearly.
+- Prefer `use` imports at the top of the file for cross-module functions, types, constants, and modules; keep `crate::...` only for import declarations or other narrowly justified cases where it materially improves clarity.
 
 ## 3. Code Flattening Rules
 
@@ -80,6 +83,7 @@ Controllers must not depend on:
 Controller rule:
 
 - translate HTTP input into application input, call application, translate output into HTTP response
+- when an endpoint needs HTTP-specific error mapping, keep that mapping in `interfaces/` wrapper errors and return those wrapper types from controllers
 
 ### 4.3 `interfaces/middleware` Boundary
 
@@ -98,6 +102,7 @@ Middleware must not depend on:
 Middleware rule:
 
 - only handle cross-cutting concerns before or after controllers, such as `X-Trace-Id`, token verification, and admin identity injection
+- trace id is exposed to clients only through the `X-Trace-Id` response header; do not duplicate it in JSON response bodies
 
 ### 4.4 `application/`
 

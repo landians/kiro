@@ -43,13 +43,14 @@ async fn main() -> Result<()> {
         .clone()
         .map(PostgresUserIdentityRepository::new)
         .map(UserIdentityService::new);
-    let login_service = Some(DefaultLoginService::new(
+    let login_service = DefaultLoginService::new(
         account_service.clone(),
         auth_service.clone(),
         resources.google_oauth_client,
         resources.google_oauth_state_service,
         user_identity_service.clone(),
-    ));
+    );
+    let login_service = Some(login_service);
     let services = application::AppServices::new(
         account_service,
         auth_service,

@@ -371,7 +371,8 @@ mod tests {
             return None;
         }
 
-        Some(PostgresUserIdentityRepository::new(pool))
+        let repository = PostgresUserIdentityRepository::new(pool);
+        Some(repository)
     }
 
     fn unique_suffix(prefix: &str) -> String {
@@ -379,6 +380,7 @@ mod tests {
     }
 
     async fn insert_test_user(repository: &PostgresUserIdentityRepository, user_code: &str) -> i64 {
+        let email = format!("{user_code}@example.com");
         sqlx::query(
             r#"
             insert into kiro.users (
@@ -394,8 +396,8 @@ mod tests {
             "#,
         )
         .bind(user_code)
-        .bind(format!("{user_code}@example.com"))
-        .bind(format!("{user_code}@example.com"))
+        .bind(email.clone())
+        .bind(email)
         .fetch_one(&repository.pool)
         .await
         .expect("test user should insert")
@@ -420,17 +422,17 @@ mod tests {
         let identity_code = unique_suffix("m12_identity");
         let provider_user_id = unique_suffix("google-user");
 
+        let profile = json!({"sub": provider_user_id});
+        let new_identity = NewUserIdentity::new(
+            identity_code.clone(),
+            user_id,
+            IdentityProvider::Google,
+            provider_user_id.clone(),
+        )
+        .with_provider_email("Identity.User@example.com")
+        .with_profile(profile);
         let created = repository
-            .create(
-                NewUserIdentity::new(
-                    identity_code.clone(),
-                    user_id,
-                    IdentityProvider::Google,
-                    provider_user_id.clone(),
-                )
-                .with_provider_email("Identity.User@example.com")
-                .with_profile(json!({"sub": provider_user_id})),
-            )
+            .create(new_identity)
             .await
             .expect("identity should be created");
 
@@ -467,26 +469,28 @@ mod tests {
         let first_identity_code = unique_suffix("m12_identity_first");
         let second_identity_code = unique_suffix("m12_identity_second");
 
+        let first_provider_subject = unique_suffix("google-subject-first");
+        let first_identity = NewUserIdentity::new(
+            first_identity_code,
+            user_id,
+            IdentityProvider::Google,
+            first_provider_subject,
+        );
         repository
-            .create(NewUserIdentity::new(
-                first_identity_code,
-                user_id,
-                IdentityProvider::Google,
-                unique_suffix("google-subject-first"),
-            ))
+            .create(first_identity)
             .await
             .expect("first identity should be created");
 
+        let second_provider_subject = unique_suffix("google-subject-second");
+        let second_identity = NewUserIdentity::new(
+            second_identity_code,
+            user_id,
+            IdentityProvider::Google,
+            second_provider_subject,
+        )
+        .with_provider_email("list@example.com");
         repository
-            .create(
-                NewUserIdentity::new(
-                    second_identity_code,
-                    user_id,
-                    IdentityProvider::Google,
-                    unique_suffix("google-subject-second"),
-                )
-                .with_provider_email("list@example.com"),
-            )
+            .create(second_identity)
             .await
             .expect("second identity should be created");
 
@@ -508,13 +512,16 @@ mod tests {
 
         let user_code = unique_suffix("m12_identity_auth_user");
         let user_id = insert_test_user(&repository, &user_code).await;
+        let identity_code = unique_suffix("m12_identity_auth");
+        let provider_subject = unique_suffix("google-subject-auth");
+        let new_identity = NewUserIdentity::new(
+            identity_code,
+            user_id,
+            IdentityProvider::Google,
+            provider_subject,
+        );
         let identity = repository
-            .create(NewUserIdentity::new(
-                unique_suffix("m12_identity_auth"),
-                user_id,
-                IdentityProvider::Google,
-                unique_suffix("google-subject-auth"),
-            ))
+            .create(new_identity)
             .await
             .expect("identity should be created");
 
@@ -539,23 +546,27 @@ mod tests {
         let user_id = insert_test_user(&repository, &user_code).await;
         let provider_user_id = unique_suffix("google-subject-conflict");
 
+        let first_identity_code = unique_suffix("m12_identity_conflict_first");
+        let first_identity = NewUserIdentity::new(
+            first_identity_code,
+            user_id,
+            IdentityProvider::Google,
+            provider_user_id.clone(),
+        );
         repository
-            .create(NewUserIdentity::new(
-                unique_suffix("m12_identity_conflict_first"),
-                user_id,
-                IdentityProvider::Google,
-                provider_user_id.clone(),
-            ))
+            .create(first_identity)
             .await
             .expect("first identity should be created");
 
+        let second_identity_code = unique_suffix("m12_identity_conflict_second");
+        let second_identity = NewUserIdentity::new(
+            second_identity_code,
+            user_id,
+            IdentityProvider::Google,
+            provider_user_id,
+        );
         let error = repository
-            .create(NewUserIdentity::new(
-                unique_suffix("m12_identity_conflict_second"),
-                user_id,
-                IdentityProvider::Google,
-                provider_user_id,
-            ))
+            .create(second_identity)
             .await
             .expect_err("duplicate provider subject should fail");
 

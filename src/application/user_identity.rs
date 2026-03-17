@@ -122,9 +122,8 @@ mod tests {
         fn seeded(identity: UserIdentity) -> Self {
             let mut identities = HashMap::new();
             identities.insert(identity.id, identity);
-            Self {
-                identities: Arc::new(Mutex::new(identities)),
-            }
+            let identities = Arc::new(Mutex::new(identities));
+            Self { identities }
         }
     }
 
@@ -268,12 +267,12 @@ mod tests {
     #[tokio::test]
     async fn create_find_and_list_identity_via_service() {
         let service = UserIdentityService::new(TestUserIdentityRepository::default());
+        let new_identity =
+            NewUserIdentity::new("identity_new", 7, IdentityProvider::Google, "google-new")
+                .with_provider_email("new@example.com");
 
         let created = service
-            .create_identity(
-                NewUserIdentity::new("identity_new", 7, IdentityProvider::Google, "google-new")
-                    .with_provider_email("new@example.com"),
-            )
+            .create_identity(new_identity)
             .await
             .expect("identity create should succeed");
 
@@ -300,7 +299,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_identity_by_provider_email_normalizes_input() {
-        let service = UserIdentityService::new(TestUserIdentityRepository::seeded(test_identity()));
+        let user_identity_repository = TestUserIdentityRepository::seeded(test_identity());
+        let service = UserIdentityService::new(user_identity_repository);
 
         let found = service
             .find_identity_by_provider_email(IdentityProvider::Google, "  HELLO@example.com ")
@@ -313,7 +313,8 @@ mod tests {
 
     #[tokio::test]
     async fn record_authentication_updates_timestamp() {
-        let service = UserIdentityService::new(TestUserIdentityRepository::seeded(test_identity()));
+        let user_identity_repository = TestUserIdentityRepository::seeded(test_identity());
+        let service = UserIdentityService::new(user_identity_repository);
 
         let updated = service
             .record_authentication(5)

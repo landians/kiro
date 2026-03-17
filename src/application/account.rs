@@ -108,9 +108,8 @@ mod tests {
         fn seeded(user: User) -> Self {
             let mut users = HashMap::new();
             users.insert(user.id, user);
-            Self {
-                users: Arc::new(Mutex::new(users)),
-            }
+            let users = Arc::new(Mutex::new(users));
+            Self { users }
         }
     }
 
@@ -222,7 +221,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_user_by_email_normalizes_input() {
-        let service = AccountService::new(TestUserRepository::seeded(test_user()));
+        let user_repository = TestUserRepository::seeded(test_user());
+        let service = AccountService::new(user_repository);
 
         let found = service
             .find_user_by_email("  HELLO@example.com ")
@@ -236,9 +236,10 @@ mod tests {
     #[tokio::test]
     async fn create_find_and_update_status_via_service() {
         let service = AccountService::new(TestUserRepository::default());
+        let new_user = NewUser::new("user_new").with_email("new@example.com");
 
         let created = service
-            .create_user(NewUser::new("user_new").with_email("new@example.com"))
+            .create_user(new_user)
             .await
             .expect("user create should succeed");
 
@@ -277,7 +278,8 @@ mod tests {
 
     #[tokio::test]
     async fn record_last_login_updates_timestamp() {
-        let service = AccountService::new(TestUserRepository::seeded(test_user()));
+        let user_repository = TestUserRepository::seeded(test_user());
+        let service = AccountService::new(user_repository);
 
         let updated = service
             .record_last_login(7)

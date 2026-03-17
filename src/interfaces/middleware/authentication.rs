@@ -45,7 +45,6 @@ pub async fn require_access_token(
         return AppError::unauthorized(
             "missing_bearer_token",
             "Authorization header must use Bearer token.",
-            trace_id,
         )
         .into_response();
     };
@@ -58,7 +57,6 @@ pub async fn require_access_token(
         return AppError::unauthorized(
             "missing_user_agent",
             "User-Agent header is required for authenticated requests.",
-            trace_id,
         )
         .into_response();
     };
@@ -90,7 +88,7 @@ pub async fn require_access_token(
                 error = %blacklist_error,
                 "failed to query token blacklist"
             );
-            return blacklist_unavailable_response(trace_id);
+            return blacklist_unavailable_response();
         }
     };
 
@@ -126,7 +124,6 @@ pub async fn require_refresh_token(
         return AppError::unauthorized(
             "missing_refresh_token",
             "Refresh token header is required.",
-            trace_id,
         )
         .into_response();
     };
@@ -139,7 +136,6 @@ pub async fn require_refresh_token(
         return AppError::unauthorized(
             "missing_user_agent",
             "User-Agent header is required for authenticated requests.",
-            trace_id,
         )
         .into_response();
     };
@@ -176,7 +172,7 @@ pub async fn require_refresh_token(
                 error = %blacklist_error,
                 "failed to query token blacklist"
             );
-            return blacklist_unavailable_response(trace_id);
+            return blacklist_unavailable_response();
         }
     };
 
@@ -213,33 +209,28 @@ fn map_jwt_error_to_response(error: JwtError, trace_id: String, token_kind: Toke
         JwtError::MissingUserAgent => AppError::unauthorized(
             "missing_user_agent",
             "User-Agent header is required for authenticated requests.",
-            trace_id,
         )
         .into_response(),
         JwtError::TokenExpired => {
-            AppError::unauthorized("token_expired", token_expired_message(token_kind), trace_id)
+            AppError::unauthorized("token_expired", token_expired_message(token_kind))
                 .into_response()
         }
-        JwtError::UnexpectedTokenKind { .. } => AppError::unauthorized(
-            "invalid_token_kind",
-            invalid_kind_message(token_kind),
-            trace_id,
-        )
-        .into_response(),
+        JwtError::UnexpectedTokenKind { .. } => {
+            AppError::unauthorized("invalid_token_kind", invalid_kind_message(token_kind))
+                .into_response()
+        }
         JwtError::UserAgentMismatch => AppError::unauthorized(
             "user_agent_mismatch",
             user_agent_mismatch_message(token_kind),
-            trace_id,
         )
         .into_response(),
         JwtError::TokenRevoked => {
-            AppError::unauthorized("token_revoked", token_revoked_message(token_kind), trace_id)
+            AppError::unauthorized("token_revoked", token_revoked_message(token_kind))
                 .into_response()
         }
         _ => AppError::unauthorized(
             invalid_token_code(token_kind),
             invalid_token_message(token_kind),
-            trace_id,
         )
         .into_response(),
     }
@@ -259,12 +250,11 @@ fn invalid_token_message(token_kind: TokenKind) -> &'static str {
     }
 }
 
-fn blacklist_unavailable_response(trace_id: String) -> Response {
+fn blacklist_unavailable_response() -> Response {
     AppError::new(
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
         "blacklist_unavailable",
         "Token blacklist backend is unavailable.",
-        trace_id,
     )
     .into_response()
 }

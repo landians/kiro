@@ -49,7 +49,6 @@ pub struct ApiErrorEnvelope {
 pub struct ApiErrorBody {
     pub code: &'static str,
     pub message: String,
-    pub trace_id: String,
 }
 
 #[derive(Debug)]
@@ -57,39 +56,27 @@ pub struct AppError {
     status: StatusCode,
     code: &'static str,
     message: String,
-    trace_id: String,
 }
 
 impl AppError {
-    pub fn new(
-        status: StatusCode,
-        code: &'static str,
-        message: impl Into<String>,
-        trace_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
             message: message.into(),
-            trace_id: trace_id.into(),
         }
     }
 
-    pub fn not_found(trace_id: impl Into<String>) -> Self {
+    pub fn not_found() -> Self {
         Self::new(
             StatusCode::NOT_FOUND,
             "route_not_found",
             "The requested route does not exist.",
-            trace_id,
         )
     }
 
-    pub fn unauthorized(
-        code: &'static str,
-        message: impl Into<String>,
-        trace_id: impl Into<String>,
-    ) -> Self {
-        Self::new(StatusCode::UNAUTHORIZED, code, message, trace_id)
+    pub fn unauthorized(code: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, code, message)
     }
 }
 
@@ -102,7 +89,6 @@ impl IntoResponse for AppError {
                 error: ApiErrorBody {
                     code: self.code,
                     message: self.message,
-                    trace_id: self.trace_id,
                 },
             }),
         )

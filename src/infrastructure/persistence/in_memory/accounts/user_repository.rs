@@ -15,9 +15,8 @@ impl InMemoryUserRepository {
     pub fn seeded(user: User) -> Self {
         let mut users = HashMap::new();
         users.insert(user.id, user);
-        Self {
-            users: Arc::new(Mutex::new(users)),
-        }
+        let users = Arc::new(Mutex::new(users));
+        Self { users }
     }
 }
 

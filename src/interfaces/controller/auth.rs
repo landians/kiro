@@ -1,19 +1,20 @@
 use axum::Extension;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
-use axum::http::StatusCode;
 use tracing::error;
 
+use crate::application::login::GoogleLoginCallbackCommand;
 use crate::interfaces::AppState;
 use crate::interfaces::dto::auth::{
     CurrentUserResponse, GoogleAuthorizationUrlResponse, GoogleCallbackQuery,
     GoogleCallbackResponse, LogoutSessionResponse, ProtectedSessionResponse, RefreshTokenResponse,
 };
+use crate::interfaces::error::auth::AuthHttpError;
 use crate::interfaces::middleware::authentication::{
     AuthenticatedAccessToken, AuthenticatedRefreshToken,
 };
 use crate::interfaces::middleware::trace_id::RequestTrace;
-use crate::interfaces::response::{ApiSuccess, AppError};
+use crate::interfaces::response::ApiSuccess;
 
 pub async fn protected_session(
     Extension(authenticated): Extension<AuthenticatedAccessToken>,
@@ -31,11 +32,11 @@ pub async fn current_user(
     State(state): State<AppState>,
     Extension(request_trace): Extension<RequestTrace>,
     Extension(authenticated): Extension<AuthenticatedAccessToken>,
-) -> Result<ApiSuccess<CurrentUserResponse>, AppError> {
+) -> Result<ApiSuccess<CurrentUserResponse>, AuthHttpError> {
     let account_service = state
         .services
         .account_service()
-        .ok_or_else(|| current_user_unavailable_error(request_trace.trace_id().to_owned()))?;
+        .ok_or_else(AuthHttpError::current_user_unavailable)?;
 
     let user = account_service
         .find_user_by_user_code(&authenticated.subject)
@@ -47,20 +48,9 @@ pub async fn current_user(
                 error = %error,
                 "failed to load current user"
             );
-            AppError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "current_user_lookup_failed",
-                "Failed to load current user.",
-                request_trace.trace_id().to_owned(),
-            )
+            AuthHttpError::current_user_lookup_failed()
         })?
-        .ok_or_else(|| {
-            AppError::unauthorized(
-                "authenticated_user_not_found",
-                "Authenticated user does not exist.",
-                request_trace.trace_id().to_owned(),
-            )
-        })?;
+        .ok_or_else(AuthHttpError::authenticated_user_not_found)?;
 
     Ok(ApiSuccess::ok(user.into()))
 }
@@ -69,7 +59,7 @@ pub async fn refresh_session(
     State(state): State<AppState>,
     Extension(request_trace): Extension<RequestTrace>,
     Extension(authenticated): Extension<AuthenticatedRefreshToken>,
-) -> Result<ApiSuccess<RefreshTokenResponse>, AppError> {
+) -> Result<ApiSuccess<RefreshTokenResponse>, AuthHttpError> {
     state
         .services
         .auth
@@ -81,21 +71,14 @@ pub async fn refresh_session(
                 error = %error,
                 "failed to revoke refresh token during token rotation"
             );
-            blacklist_unavailable_error(request_trace.trace_id().to_owned())
+            AuthHttpError::blacklist_unavailable()
         })?;
 
     let token_pair = state
         .services
         .auth
         .issue_token_pair(&authenticated.subject, &authenticated.user_agent)
-        .map_err(|_| {
-            AppError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "token_refresh_failed",
-                "Failed to refresh session tokens.",
-                request_trace.trace_id().to_owned(),
-            )
-        })?;
+        .map_err(|_| AuthHttpError::token_refresh_failed())?;
 
     Ok(ApiSuccess::ok(RefreshTokenResponse {
         access_token: token_pair.access_token.token,
@@ -108,34 +91,23 @@ pub async fn refresh_session(
 pub async fn google_authorization_url(
     State(state): State<AppState>,
     Extension(request_trace): Extension<RequestTrace>,
-) -> Result<ApiSuccess<GoogleAuthorizationUrlResponse>, AppError> {
+) -> Result<ApiSuccess<GoogleAuthorizationUrlResponse>, AuthHttpError> {
     let login_service = state
         .services
         .login_service()
-        .ok_or_else(|| google_login_unavailable_error(request_trace.trace_id().to_owned()))?;
+        .ok_or_else(AuthHttpError::google_login_unavailable)?;
 
-    let authorization_request = login_service.build_google_authorization_request().map_err(
-        |error| {
-            error!(
-                trace_id = %request_trace.trace_id(),
-                error = %error,
-                "failed to build google authorization url"
-            );
-
-            match error {
-                crate::application::login::LoginServiceError::GoogleLoginDisabled
-                | crate::application::login::LoginServiceError::GoogleStateServiceUnavailable => {
-                    google_login_unavailable_error(request_trace.trace_id().to_owned())
-                }
-                _ => AppError::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "google_authorization_url_build_failed",
-                    "Failed to build Google authorization url.",
-                    request_trace.trace_id().to_owned(),
-                ),
-            }
-        },
-    )?;
+    let authorization_request =
+        login_service
+            .build_google_authorization_request()
+            .map_err(|error| {
+                error!(
+                    trace_id = %request_trace.trace_id(),
+                    error = %error,
+                    "failed to build google authorization url"
+                );
+                AuthHttpError::from_google_authorization_request_error(error)
+            })?;
 
     Ok(ApiSuccess::ok(GoogleAuthorizationUrlResponse {
         authorization_url: authorization_request.authorization_url,
@@ -149,66 +121,38 @@ pub async fn google_callback(
     Extension(request_trace): Extension<RequestTrace>,
     headers: HeaderMap,
     Query(query): Query<GoogleCallbackQuery>,
-) -> Result<ApiSuccess<GoogleCallbackResponse>, AppError> {
+) -> Result<ApiSuccess<GoogleCallbackResponse>, AuthHttpError> {
     if let Some(error_code) = query.error.as_deref() {
-        let message = query
-            .error_description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("Google authorization failed.");
-        return Err(AppError::new(
-            StatusCode::BAD_REQUEST,
-            "google_authorization_denied",
-            format!("{error_code}: {message}"),
-            request_trace.trace_id().to_owned(),
+        return Err(AuthHttpError::google_authorization_denied(
+            error_code,
+            query.error_description.as_deref(),
         ));
     }
 
     let login_service = state
         .services
         .login_service()
-        .ok_or_else(|| google_login_unavailable_error(request_trace.trace_id().to_owned()))?;
+        .ok_or_else(AuthHttpError::google_login_unavailable)?;
 
     let authorization_code = query
         .code
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AppError::new(
-                StatusCode::BAD_REQUEST,
-                "missing_authorization_code",
-                "Google authorization code is required.",
-                request_trace.trace_id().to_owned(),
-            )
-        })?;
+        .ok_or_else(AuthHttpError::missing_authorization_code)?;
     let oauth_state = query
         .state
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AppError::new(
-                StatusCode::BAD_REQUEST,
-                "missing_google_state",
-                "Google oauth state is required.",
-                request_trace.trace_id().to_owned(),
-            )
-        })?;
+        .ok_or_else(AuthHttpError::missing_google_state)?;
 
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AppError::new(
-                StatusCode::BAD_REQUEST,
-                "missing_user_agent",
-                "User-Agent header is required.",
-                request_trace.trace_id().to_owned(),
-            )
-        })?;
+        .ok_or_else(AuthHttpError::missing_user_agent)?;
 
     let login_result = login_service
-        .complete_google_login(crate::application::login::GoogleLoginCallbackCommand {
+        .complete_google_login(GoogleLoginCallbackCommand {
             authorization_code: authorization_code.to_owned(),
             oauth_state: oauth_state.to_owned(),
             user_agent: user_agent.to_owned(),
@@ -221,7 +165,7 @@ pub async fn google_callback(
                 error = %error,
                 "failed to complete google login callback"
             );
-            map_google_callback_error(error, request_trace.trace_id().to_owned())
+            AuthHttpError::from_google_callback_error(error)
         })?;
 
     Ok(ApiSuccess::ok(GoogleCallbackResponse {
@@ -241,13 +185,9 @@ pub async fn logout_session(
     Extension(request_trace): Extension<RequestTrace>,
     Extension(access_token): Extension<AuthenticatedAccessToken>,
     Extension(refresh_token): Extension<AuthenticatedRefreshToken>,
-) -> Result<ApiSuccess<LogoutSessionResponse>, AppError> {
+) -> Result<ApiSuccess<LogoutSessionResponse>, AuthHttpError> {
     if access_token.subject != refresh_token.subject {
-        return Err(AppError::unauthorized(
-            "token_subject_mismatch",
-            "Access token and refresh token must belong to the same subject.",
-            request_trace.trace_id().to_owned(),
-        ));
+        return Err(AuthHttpError::token_subject_mismatch());
     }
 
     state
@@ -266,7 +206,7 @@ pub async fn logout_session(
                 error = %error,
                 "failed to revoke session tokens during logout"
             );
-            blacklist_unavailable_error(request_trace.trace_id().to_owned())
+            AuthHttpError::blacklist_unavailable()
         })?;
 
     Ok(ApiSuccess::ok(LogoutSessionResponse {
@@ -274,110 +214,4 @@ pub async fn logout_session(
         access_token_revoked: true,
         refresh_token_revoked: true,
     }))
-}
-
-fn blacklist_unavailable_error(trace_id: String) -> AppError {
-    AppError::new(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "blacklist_unavailable",
-        "Token blacklist backend is unavailable.",
-        trace_id,
-    )
-}
-
-fn google_login_unavailable_error(trace_id: String) -> AppError {
-    AppError::new(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "google_login_unavailable",
-        "Google login is not enabled.",
-        trace_id,
-    )
-}
-
-fn current_user_unavailable_error(trace_id: String) -> AppError {
-    AppError::new(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "current_user_unavailable",
-        "Current user service is not available.",
-        trace_id,
-    )
-}
-
-fn map_google_callback_error(
-    error: crate::application::login::LoginServiceError,
-    trace_id: String,
-) -> AppError {
-    match error {
-        crate::application::login::LoginServiceError::GoogleLoginDisabled
-        | crate::application::login::LoginServiceError::AccountServiceUnavailable
-        | crate::application::login::LoginServiceError::UserIdentityServiceUnavailable => {
-            google_login_unavailable_error(trace_id)
-        }
-        crate::application::login::LoginServiceError::MissingAuthorizationCode => AppError::new(
-            StatusCode::BAD_REQUEST,
-            "missing_authorization_code",
-            "Google authorization code is required.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::MissingOAuthState => AppError::new(
-            StatusCode::BAD_REQUEST,
-            "missing_google_state",
-            "Google oauth state is required.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::MissingUserAgent => AppError::new(
-            StatusCode::BAD_REQUEST,
-            "missing_user_agent",
-            "User-Agent header is required.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::GoogleOAuthState(
-            crate::infrastructure::auth::google_state::GoogleOAuthStateError::InvalidState
-            | crate::infrastructure::auth::google_state::GoogleOAuthStateError::StateExpired,
-        ) => AppError::new(
-            StatusCode::BAD_REQUEST,
-            "invalid_google_state",
-            "Google oauth state is invalid or expired.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::GoogleOAuthState(
-            crate::infrastructure::auth::google_state::GoogleOAuthStateError::MissingState,
-        ) => AppError::new(
-            StatusCode::BAD_REQUEST,
-            "missing_google_state",
-            "Google oauth state is required.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::IdentityBindingConflict { .. } => {
-            AppError::new(
-                StatusCode::CONFLICT,
-                "identity_binding_conflict",
-                "Google identity conflicts with an existing binding.",
-                trace_id,
-            )
-        }
-        crate::application::login::LoginServiceError::GoogleOAuth(_) => AppError::new(
-            StatusCode::BAD_GATEWAY,
-            "google_oauth_exchange_failed",
-            "Failed to exchange Google authorization code or fetch profile.",
-            trace_id,
-        ),
-        crate::application::login::LoginServiceError::GoogleStateServiceUnavailable => {
-            google_login_unavailable_error(trace_id)
-        }
-        crate::application::login::LoginServiceError::UserRepository(_)
-        | crate::application::login::LoginServiceError::UserIdentityRepository(_)
-        | crate::application::login::LoginServiceError::ProfileSerializationFailed(_)
-        | crate::application::login::LoginServiceError::TokenIssuanceFailed(_)
-        | crate::application::login::LoginServiceError::GoogleOAuthState(_)
-        | crate::application::login::LoginServiceError::MissingGoogleSubject
-        | crate::application::login::LoginServiceError::InconsistentIdentityUser { .. } => {
-            AppError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "google_login_failed",
-                "Failed to complete Google login.",
-                trace_id,
-            )
-        }
-    }
 }

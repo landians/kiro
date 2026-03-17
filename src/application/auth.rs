@@ -1,6 +1,6 @@
 use crate::infrastructure::auth::blacklist::{TokenBlacklistError, TokenBlacklistService};
 use crate::infrastructure::auth::jwt::{
-    IssuedToken, JwtError, JwtService, TokenPair, ValidatedToken,
+    IssuedToken, JwtError, JwtService, TokenKind, TokenPair, ValidatedToken,
 };
 
 #[derive(Clone)]
@@ -38,13 +38,11 @@ impl AuthService {
     }
 
     pub fn validate_access_token(&self, token: &str) -> Result<ValidatedToken, JwtError> {
-        self.jwt_service
-            .validate_token(token, crate::infrastructure::auth::jwt::TokenKind::Access)
+        self.jwt_service.validate_token(token, TokenKind::Access)
     }
 
     pub fn validate_refresh_token(&self, token: &str) -> Result<ValidatedToken, JwtError> {
-        self.jwt_service
-            .validate_token(token, crate::infrastructure::auth::jwt::TokenKind::Refresh)
+        self.jwt_service.validate_token(token, TokenKind::Refresh)
     }
 
     pub fn hash_user_agent(&self, user_agent: &str) -> Result<String, JwtError> {
@@ -53,13 +51,13 @@ impl AuthService {
 
     pub async fn is_access_token_revoked(&self, jti: &str) -> Result<bool, TokenBlacklistError> {
         self.token_blacklist_service
-            .is_revoked(crate::infrastructure::auth::jwt::TokenKind::Access, jti)
+            .is_revoked(TokenKind::Access, jti)
             .await
     }
 
     pub async fn is_refresh_token_revoked(&self, jti: &str) -> Result<bool, TokenBlacklistError> {
         self.token_blacklist_service
-            .is_revoked(crate::infrastructure::auth::jwt::TokenKind::Refresh, jti)
+            .is_revoked(TokenKind::Refresh, jti)
             .await
     }
 
@@ -69,11 +67,7 @@ impl AuthService {
         expires_at: u64,
     ) -> Result<(), TokenBlacklistError> {
         self.token_blacklist_service
-            .revoke(
-                crate::infrastructure::auth::jwt::TokenKind::Access,
-                jti,
-                expires_at,
-            )
+            .revoke(TokenKind::Access, jti, expires_at)
             .await
     }
 
@@ -83,11 +77,7 @@ impl AuthService {
         expires_at: u64,
     ) -> Result<(), TokenBlacklistError> {
         self.token_blacklist_service
-            .revoke(
-                crate::infrastructure::auth::jwt::TokenKind::Refresh,
-                jti,
-                expires_at,
-            )
+            .revoke(TokenKind::Refresh, jti, expires_at)
             .await
     }
 

@@ -95,8 +95,7 @@
   "success": false,
   "error": {
     "code": "error_code",
-    "message": "Human readable message.",
-    "trace_id": "trace_id_value"
+    "message": "Human readable message."
   }
 }
 ```
@@ -106,7 +105,7 @@
 - `success` 固定为 `false`
 - `error.code` 是稳定错误码，供客户端识别
 - `error.message` 是面向客户端的可读消息
-- `error.trace_id` 必须与响应头 `X-Trace-Id` 保持一致
+- 排障使用的 trace id 只从响应头 `X-Trace-Id` 获取，不在错误响应体中重复返回
 
 ### 5.2 示例
 
@@ -117,8 +116,7 @@
   "success": false,
   "error": {
     "code": "route_not_found",
-    "message": "The requested route does not exist.",
-    "trace_id": "cli_trace_123"
+    "message": "The requested route does not exist."
   }
 }
 ```
@@ -191,7 +189,7 @@ X-Trace-Id: <trace_id>
 
 ### 7.3 透传规则
 
-- 如果请求携带合法 `X-Trace-Id`，响应头和错误体中的 `trace_id` 必须使用同一个值
+- 如果请求携带合法 `X-Trace-Id`，响应头必须透传同一个值
 - 如果请求未携带合法 `X-Trace-Id`，系统必须自动生成，并在响应头中返回
 
 ### 7.4 与日志的关系
@@ -200,7 +198,7 @@ X-Trace-Id: <trace_id>
 
 - 请求日志
 - 响应头 `X-Trace-Id`
-- 错误响应体中的 `error.trace_id`
+- 服务端错误日志中的请求 trace 字段
 
 ## 8. 鉴权请求头约定
 

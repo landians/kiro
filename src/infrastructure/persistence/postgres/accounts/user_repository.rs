@@ -332,7 +332,8 @@ mod tests {
             return None;
         }
 
-        Some(PostgresUserRepository::new(pool))
+        let repository = PostgresUserRepository::new(pool);
+        Some(repository)
     }
 
     fn unique_user_code(prefix: &str) -> String {
@@ -355,12 +356,11 @@ mod tests {
         let user_code = unique_user_code("m11_create_find");
         delete_user_by_code(&repository, &user_code).await;
 
+        let new_user = NewUser::new(user_code.clone())
+            .with_email("M1.1.User@example.com")
+            .with_display_name("M1.1 User");
         let created = repository
-            .create(
-                NewUser::new(user_code.clone())
-                    .with_email("M1.1.User@example.com")
-                    .with_display_name("M1.1 User"),
-            )
+            .create(new_user)
             .await
             .expect("user should be created");
 
@@ -397,8 +397,9 @@ mod tests {
         let user_code = unique_user_code("m11_update_status");
         delete_user_by_code(&repository, &user_code).await;
 
+        let new_user = NewUser::new(user_code.clone()).with_status(UserStatus::Active);
         let created = repository
-            .create(NewUser::new(user_code.clone()).with_status(UserStatus::Active))
+            .create(new_user)
             .await
             .expect("user should be created");
 
@@ -429,8 +430,9 @@ mod tests {
         let user_code = unique_user_code("m11_invalid_transition");
         delete_user_by_code(&repository, &user_code).await;
 
+        let new_user = NewUser::new(user_code.clone()).with_status(UserStatus::Active);
         let created = repository
-            .create(NewUser::new(user_code.clone()).with_status(UserStatus::Active))
+            .create(new_user)
             .await
             .expect("user should be created");
 
@@ -460,8 +462,9 @@ mod tests {
         let user_code = unique_user_code("m11_last_login");
         delete_user_by_code(&repository, &user_code).await;
 
+        let new_user = NewUser::new(user_code.clone()).with_status(UserStatus::Active);
         let created = repository
-            .create(NewUser::new(user_code.clone()).with_status(UserStatus::Active))
+            .create(new_user)
             .await
             .expect("user should be created");
 

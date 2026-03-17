@@ -15,6 +15,7 @@ use crate::interfaces::response::AppError;
 
 pub mod controller;
 pub mod dto;
+pub mod error;
 pub mod middleware;
 pub mod response;
 
@@ -91,8 +92,8 @@ fn build_auth_routes(state: AppState) -> Router<AppState> {
         .merge(session_routes)
 }
 
-async fn not_found(Extension(request_trace): Extension<RequestTrace>) -> AppError {
-    AppError::not_found(request_trace.trace_id().to_owned())
+async fn not_found(Extension(_request_trace): Extension<RequestTrace>) -> AppError {
+    AppError::not_found()
 }
 
 #[cfg(test)]
@@ -115,10 +116,14 @@ mod tests {
     use crate::application::user_identity::UserIdentityService;
     use crate::config::AppConfig;
     use crate::domain::account::{User, UserStatus};
+    use crate::domain::user_identity::{IdentityProvider, UserIdentity};
+    use crate::infrastructure::auth::blacklist::TokenBlacklistServiceBuilder;
     use crate::infrastructure::auth::google::{
         GoogleOAuthClient, GoogleOAuthClientBuilder, GoogleTokenResponse, GoogleUserProfile,
     };
+    use crate::infrastructure::auth::google_state::GoogleOAuthStateService;
     use crate::infrastructure::auth::google_state::GoogleOAuthStateServiceBuilder;
+    use crate::infrastructure::auth::jwt::JwtServiceBuilder;
     use crate::infrastructure::persistence::in_memory::accounts::user_identity_repository::InMemoryUserIdentityRepository;
     use crate::infrastructure::persistence::in_memory::accounts::user_repository::InMemoryUserRepository;
     use crate::infrastructure::{BootstrapResources, DependencyHealth, ReadinessState};
@@ -211,17 +216,20 @@ mod tests {
         let auth_service =
             AuthService::new(resources.jwt_service, resources.token_blacklist_service);
         let health_service = HealthService::new(resources.readiness);
-        let login_service = Some(LoginService::new(
+        let google_oauth_client = GoogleOAuthClientBuilder::new(config.auth.google.clone())
+            .build()
+            .expect("google client should build");
+        let google_oauth_state_service = GoogleOAuthStateServiceBuilder::new(config.auth.clone())
+            .build()
+            .expect("google state service should build");
+        let login_service = LoginService::new(
             None,
             auth_service.clone(),
-            GoogleOAuthClientBuilder::new(config.auth.google.clone())
-                .build()
-                .expect("google client should build"),
-            GoogleOAuthStateServiceBuilder::new(config.auth.clone())
-                .build()
-                .expect("google state service should build"),
+            google_oauth_client,
+            google_oauth_state_service,
             None,
-        ));
+        );
+        let login_service = Some(login_service);
         let services = AppServices::new(None, auth_service, health_service, login_service, None);
 
         AppState {
@@ -255,6 +263,10 @@ mod tests {
         )
     }
 
+    fn bearer_authorization(token: &str) -> String {
+        format!("Bearer {token}")
+    }
+
     fn google_oauth_exchange_error_client_for_test(config: &AppConfig) -> GoogleOAuthClient {
         GoogleOAuthClient::for_test_exchange_error(
             config.auth.google.clone(),
@@ -263,9 +275,7 @@ mod tests {
         )
     }
 
-    fn google_oauth_state_service_for_test(
-        config: &AppConfig,
-    ) -> crate::infrastructure::auth::google_state::GoogleOAuthStateService {
+    fn google_oauth_state_service_for_test(config: &AppConfig) -> GoogleOAuthStateService {
         GoogleOAuthStateServiceBuilder::new(config.auth.clone())
             .build()
             .expect("google state service should build")
@@ -281,11 +291,13 @@ mod tests {
         let account_service = AccountService::new(InMemoryUserRepository::default());
         let user_identity_service =
             UserIdentityService::new(InMemoryUserIdentityRepository::default());
+        let google_oauth_client = google_oauth_client_for_test(&config);
+        let google_oauth_state_service = google_oauth_state_service_for_test(&config);
         let login_service = LoginService::new(
             Some(account_service.clone()),
             auth_service.clone(),
-            Some(google_oauth_client_for_test(&config)),
-            Some(google_oauth_state_service_for_test(&config)),
+            Some(google_oauth_client),
+            Some(google_oauth_state_service),
             Some(user_identity_service),
         );
         let services = AppServices::new(None, auth_service, health_service, None, None)
@@ -305,7 +317,8 @@ mod tests {
         let auth_service =
             AuthService::new(resources.jwt_service, resources.token_blacklist_service);
         let health_service = HealthService::new(resources.readiness);
-        let account_service = AccountService::new(InMemoryUserRepository::seeded(user));
+        let user_repository = InMemoryUserRepository::seeded(user);
+        let account_service = AccountService::new(user_repository);
         let services = AppServices::new(None, auth_service, health_service, None, None)
             .with_test_account(account_service);
 
@@ -322,16 +335,18 @@ mod tests {
         let auth_service =
             AuthService::new(resources.jwt_service, resources.token_blacklist_service);
         let health_service = HealthService::new(resources.readiness);
-        let account_service =
-            AccountService::new(InMemoryUserRepository::seeded(seeded_conflict_user()));
-        let user_identity_service = UserIdentityService::new(
-            InMemoryUserIdentityRepository::seeded(seeded_conflict_identity()),
-        );
+        let user_repository = InMemoryUserRepository::seeded(seeded_conflict_user());
+        let account_service = AccountService::new(user_repository);
+        let user_identity_repository =
+            InMemoryUserIdentityRepository::seeded(seeded_conflict_identity());
+        let user_identity_service = UserIdentityService::new(user_identity_repository);
+        let google_oauth_client = google_oauth_client_for_test(&config);
+        let google_oauth_state_service = google_oauth_state_service_for_test(&config);
         let login_service = LoginService::new(
             Some(account_service.clone()),
             auth_service.clone(),
-            Some(google_oauth_client_for_test(&config)),
-            Some(google_oauth_state_service_for_test(&config)),
+            Some(google_oauth_client),
+            Some(google_oauth_state_service),
             Some(user_identity_service),
         );
         let services = AppServices::new(None, auth_service, health_service, None, None)
@@ -354,11 +369,13 @@ mod tests {
         let account_service = AccountService::new(InMemoryUserRepository::default());
         let user_identity_service =
             UserIdentityService::new(InMemoryUserIdentityRepository::default());
+        let google_oauth_client = google_oauth_exchange_error_client_for_test(&config);
+        let google_oauth_state_service = google_oauth_state_service_for_test(&config);
         let login_service = LoginService::new(
             Some(account_service.clone()),
             auth_service.clone(),
-            Some(google_oauth_exchange_error_client_for_test(&config)),
-            Some(google_oauth_state_service_for_test(&config)),
+            Some(google_oauth_client),
+            Some(google_oauth_state_service),
             Some(user_identity_service),
         );
         let services = AppServices::new(None, auth_service, health_service, None, None)
@@ -408,13 +425,13 @@ mod tests {
         }
     }
 
-    fn seeded_conflict_identity() -> crate::domain::user_identity::UserIdentity {
+    fn seeded_conflict_identity() -> UserIdentity {
         let now = OffsetDateTime::now_utc();
-        crate::domain::user_identity::UserIdentity {
+        UserIdentity {
             id: 9,
             identity_code: "identity_conflict".to_owned(),
             user_id: 99,
-            provider: crate::domain::user_identity::IdentityProvider::Google,
+            provider: IdentityProvider::Google,
             provider_user_id: "other-google-subject".to_owned(),
             provider_email: Some("hello@example.com".to_owned()),
             provider_email_normalized: Some("hello@example.com".to_owned()),
@@ -698,6 +715,7 @@ mod tests {
         let access_token = login_json["data"]["access_token"]
             .as_str()
             .expect("access token should be string");
+        let authorization_header = bearer_authorization(access_token);
         let user_code = login_json["data"]["user_code"]
             .as_str()
             .expect("user code should be string");
@@ -706,7 +724,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("authorization", authorization_header.clone())
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -727,7 +745,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/me")
-                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -758,6 +776,7 @@ mod tests {
             .as_str()
             .expect("refresh token should be string")
             .to_owned();
+        let old_access_authorization = bearer_authorization(&old_access_token);
 
         let refresh_response = build_router(state.clone())
             .oneshot(
@@ -784,6 +803,7 @@ mod tests {
         let new_refresh_token = refresh_json["data"]["refresh_token"]
             .as_str()
             .expect("refresh token should be string");
+        let new_access_authorization = bearer_authorization(new_access_token);
 
         let reuse_old_refresh_response = build_router(state.clone())
             .oneshot(
@@ -813,7 +833,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {old_access_token}"))
+                    .header("authorization", old_access_authorization)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -826,7 +846,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {new_access_token}"))
+                    .header("authorization", new_access_authorization)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -873,13 +893,14 @@ mod tests {
             .as_str()
             .expect("refresh token should be string")
             .to_owned();
+        let current_access_authorization = bearer_authorization(&current_access_token);
 
         let logout_response = build_router(state.clone())
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/auth/logout")
-                    .header("authorization", format!("Bearer {current_access_token}"))
+                    .header("authorization", current_access_authorization.clone())
                     .header(&REFRESH_TOKEN_HEADER_NAME, current_refresh_token.clone())
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
@@ -894,7 +915,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {current_access_token}"))
+                    .header("authorization", current_access_authorization)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1080,7 +1101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fallback_returns_uniform_error_response_and_trace_id() {
+    async fn fallback_returns_uniform_error_response_and_trace_id_header() {
         let app = build_router(ready_test_state());
 
         let request_trace_id = "trace_from_request_123";
@@ -1111,7 +1132,11 @@ mod tests {
 
         assert_eq!(json["success"], false);
         assert_eq!(json["error"]["code"], "route_not_found");
-        assert_eq!(json["error"]["trace_id"], request_trace_id);
+        assert_eq!(
+            json["error"]["message"],
+            "The requested route does not exist."
+        );
+        assert!(json["error"].get("trace_id").is_none());
     }
 
     #[tokio::test]
@@ -1145,13 +1170,14 @@ mod tests {
             .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let app = build_router(state);
 
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1177,13 +1203,14 @@ mod tests {
             .auth
             .issue_access_token("user_current_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let app = build_router(state);
 
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/auth/me")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1214,13 +1241,14 @@ mod tests {
             .auth
             .issue_access_token("user_current_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let app = build_router(state);
 
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/auth/me")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1271,13 +1299,14 @@ mod tests {
             .auth
             .issue_refresh_token("user_42", "kiro-test-agent")
             .expect("refresh token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let app = build_router(state);
 
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1302,13 +1331,14 @@ mod tests {
             .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let app = build_router(state);
 
         let response = app
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "other-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1333,6 +1363,7 @@ mod tests {
             .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         state
             .services
             .auth
@@ -1345,7 +1376,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1383,15 +1414,10 @@ mod tests {
             google_oauth_state_service: None,
             postgres_pool: None,
             redis_client: None,
-            jwt_service: crate::infrastructure::auth::jwt::JwtServiceBuilder::new(
-                config.auth.clone(),
-            )
-            .build()
-            .expect("jwt service should build"),
-            token_blacklist_service:
-                crate::infrastructure::auth::blacklist::TokenBlacklistServiceBuilder::new(
-                    config.auth.blacklist_mode,
-                )
+            jwt_service: JwtServiceBuilder::new(config.auth.clone())
+                .build()
+                .expect("jwt service should build"),
+            token_blacklist_service: TokenBlacklistServiceBuilder::new(config.auth.blacklist_mode)
                 .with_redis_client(
                     None,
                     std::time::Duration::from_secs(config.redis.connect_timeout_seconds),
@@ -1414,6 +1440,7 @@ mod tests {
             .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&token.token);
         let state = AppState {
             config,
             services,
@@ -1425,7 +1452,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header("authorization", format!("Bearer {}", token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1598,6 +1625,7 @@ mod tests {
             .expect("token pair should issue");
         let access_jti = token_pair.access_token.jti.clone();
         let refresh_jti = token_pair.refresh_token.jti.clone();
+        let authorization_header = bearer_authorization(&token_pair.access_token.token);
         let app = build_router(state.clone());
 
         let response = app
@@ -1605,10 +1633,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/auth/logout")
-                    .header(
-                        "authorization",
-                        format!("Bearer {}", token_pair.access_token.token),
-                    )
+                    .header("authorization", authorization_header)
                     .header(&REFRESH_TOKEN_HEADER_NAME, token_pair.refresh_token.token)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
@@ -1653,6 +1678,7 @@ mod tests {
             .auth
             .issue_access_token("user_42", "kiro-test-agent")
             .expect("access token should issue");
+        let authorization_header = bearer_authorization(&access_token.token);
         let app = build_router(state);
 
         let response = app
@@ -1660,7 +1686,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/auth/logout")
-                    .header("authorization", format!("Bearer {}", access_token.token))
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),
@@ -1692,6 +1718,7 @@ mod tests {
             .expect("refresh token should issue");
         let access_jti = access_token.jti.clone();
         let refresh_jti = refresh_token.jti.clone();
+        let authorization_header = bearer_authorization(&access_token.token);
         let app = build_router(state.clone());
 
         let response = app
@@ -1699,7 +1726,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/auth/logout")
-                    .header("authorization", format!("Bearer {}", access_token.token))
+                    .header("authorization", authorization_header)
                     .header(&REFRESH_TOKEN_HEADER_NAME, refresh_token.token)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
@@ -1741,16 +1768,14 @@ mod tests {
             .auth
             .issue_token_pair("user_42", "kiro-test-agent")
             .expect("token pair should issue");
+        let authorization_header = bearer_authorization(&token_pair.access_token.token);
 
         let logout_response = build_router(state.clone())
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/auth/logout")
-                    .header(
-                        "authorization",
-                        format!("Bearer {}", token_pair.access_token.token),
-                    )
+                    .header("authorization", authorization_header.clone())
                     .header(
                         &REFRESH_TOKEN_HEADER_NAME,
                         token_pair.refresh_token.token.clone(),
@@ -1768,10 +1793,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/auth/protected")
-                    .header(
-                        "authorization",
-                        format!("Bearer {}", token_pair.access_token.token),
-                    )
+                    .header("authorization", authorization_header)
                     .header("user-agent", "kiro-test-agent")
                     .body(Body::empty())
                     .expect("request should build"),

@@ -159,10 +159,11 @@ impl TokenBlacklistServiceBuilder {
 
     pub fn build(self) -> TokenBlacklistService {
         let key_namespace = blacklist_namespace(&self.redis_key_prefix);
+        let memory_entries = Arc::new(Mutex::new(HashSet::new()));
         let backend = match self.mode {
             BlacklistMode::Disabled => BlacklistBackend::Disabled,
             BlacklistMode::Memory => BlacklistBackend::Memory {
-                entries: Arc::new(Mutex::new(HashSet::new())),
+                entries: memory_entries,
             },
             BlacklistMode::Redis => BlacklistBackend::Redis {
                 client: self.redis_client,

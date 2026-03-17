@@ -13,6 +13,7 @@ use crate::domain::repository::user_identity::{
 use crate::domain::user_identity::{IdentityProvider, NewUserIdentity};
 use crate::infrastructure::auth::google::{GoogleOAuthClient, GoogleOAuthError, GoogleUserProfile};
 use crate::infrastructure::auth::google_state::{GoogleOAuthStateError, GoogleOAuthStateService};
+use crate::infrastructure::auth::jwt::JwtError;
 #[cfg(test)]
 use crate::infrastructure::persistence::in_memory::accounts::user_identity_repository::InMemoryUserIdentityRepository;
 #[cfg(test)]
@@ -225,27 +226,28 @@ where
 
                 let (user, is_new_user) = match maybe_existing_user {
                     Some(user) => (user, false),
-                    None => (
-                        account_service
-                            .create_user(new_user_from_google_profile(&profile))
+                    None => {
+                        let new_user = new_user_from_google_profile(&profile);
+                        let user = account_service
+                            .create_user(new_user)
                             .await
-                            .map_err(LoginServiceError::UserRepository)?,
-                        true,
-                    ),
+                            .map_err(LoginServiceError::UserRepository)?;
+                        (user, true)
+                    }
                 };
 
+                let provider_email = verified_email(&profile).unwrap_or_default();
+                let new_identity = NewUserIdentity::new(
+                    generate_identity_code(),
+                    user.id,
+                    IdentityProvider::Google,
+                    provider_subject.to_owned(),
+                )
+                .with_profile(profile_json)
+                .with_last_authenticated_at(authenticated_at)
+                .with_provider_email(provider_email);
                 let identity = user_identity_service
-                    .create_identity(
-                        NewUserIdentity::new(
-                            generate_identity_code(),
-                            user.id,
-                            IdentityProvider::Google,
-                            provider_subject.to_owned(),
-                        )
-                        .with_profile(profile_json)
-                        .with_last_authenticated_at(authenticated_at)
-                        .with_provider_email(verified_email(&profile).unwrap_or_default()),
-                    )
+                    .create_identity(new_identity)
                     .await
                     .map_err(LoginServiceError::UserIdentityRepository)?;
 
@@ -308,7 +310,7 @@ pub enum LoginServiceError {
     #[error("failed to serialize google profile")]
     ProfileSerializationFailed(serde_json::Error),
     #[error("failed to issue session tokens")]
-    TokenIssuanceFailed(crate::infrastructure::auth::jwt::JwtError),
+    TokenIssuanceFailed(JwtError),
 }
 
 fn verified_email(profile: &GoogleUserProfile) -> Option<String> {
@@ -497,9 +499,8 @@ mod tests {
         fn seeded(user: User) -> Self {
             let mut users = HashMap::new();
             users.insert(user.id, user);
-            Self {
-                users: Arc::new(Mutex::new(users)),
-            }
+            let users = Arc::new(Mutex::new(users));
+            Self { users }
         }
     }
 
@@ -599,10 +600,27 @@ mod tests {
         fn seeded(identity: UserIdentity) -> Self {
             let mut identities = HashMap::new();
             identities.insert(identity.id, identity);
-            Self {
-                identities: Arc::new(Mutex::new(identities)),
-            }
+            let identities = Arc::new(Mutex::new(identities));
+            Self { identities }
         }
+    }
+
+    fn login_service_for_test(
+        user_repository: TestUserRepository,
+        user_identity_repository: TestUserIdentityRepository,
+        google_oauth_client: GoogleOAuthClient,
+    ) -> LoginService<TestUserRepository, TestUserIdentityRepository> {
+        let account_service = AccountService::new(user_repository);
+        let user_identity_service = UserIdentityService::new(user_identity_repository);
+        let google_oauth_state_service = google_state_service_for_test();
+
+        LoginService::new(
+            Some(account_service),
+            auth_service_for_test(),
+            Some(google_oauth_client),
+            Some(google_oauth_state_service),
+            Some(user_identity_service),
+        )
     }
 
     impl UserIdentityRepository for TestUserIdentityRepository {
@@ -789,8 +807,9 @@ mod tests {
 
     #[test]
     fn build_google_authorization_url_requires_google_client() {
+        let auth_service = auth_service_for_test();
         let login_service: LoginService<TestUserRepository, TestUserIdentityRepository> =
-            LoginService::new(None, auth_service_for_test(), None, None, None);
+            LoginService::new(None, auth_service, None, None, None);
 
         let error = login_service
             .build_google_authorization_url("state-123", "nonce-456")
@@ -801,12 +820,15 @@ mod tests {
 
     #[test]
     fn build_google_authorization_url_uses_google_adapter() {
+        let auth_service = auth_service_for_test();
+        let google_oauth_client = google_client_for_test();
+        let google_oauth_state_service = google_state_service_for_test();
         let login_service: LoginService<TestUserRepository, TestUserIdentityRepository> =
             LoginService::new(
                 None,
-                auth_service_for_test(),
-                Some(google_client_for_test()),
-                Some(google_state_service_for_test()),
+                auth_service,
+                Some(google_oauth_client),
+                Some(google_oauth_state_service),
                 None,
             );
 
@@ -822,12 +844,15 @@ mod tests {
 
     #[test]
     fn build_google_authorization_request_generates_state_and_nonce() {
+        let auth_service = auth_service_for_test();
+        let google_oauth_client = google_client_for_test();
+        let google_oauth_state_service = google_state_service_for_test();
         let login_service: LoginService<TestUserRepository, TestUserIdentityRepository> =
             LoginService::new(
                 None,
-                auth_service_for_test(),
-                Some(google_client_for_test()),
-                Some(google_state_service_for_test()),
+                auth_service,
+                Some(google_oauth_client),
+                Some(google_oauth_state_service),
                 None,
             );
 
@@ -837,28 +862,18 @@ mod tests {
 
         assert!(!request.state.is_empty());
         assert!(!request.nonce.is_empty());
-        assert!(
-            request
-                .authorization_url
-                .contains(&format!("state={}", request.state))
-        );
-        assert!(
-            request
-                .authorization_url
-                .contains(&format!("nonce={}", request.nonce))
-        );
+        let state_query = format!("state={}", request.state);
+        let nonce_query = format!("nonce={}", request.nonce);
+        assert!(request.authorization_url.contains(&state_query));
+        assert!(request.authorization_url.contains(&nonce_query));
     }
 
     #[tokio::test]
     async fn complete_google_login_creates_user_and_identity_for_first_login() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::default())),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let login_service = login_service_for_test(
+            TestUserRepository::default(),
+            TestUserIdentityRepository::default(),
+            google_client_for_test(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
@@ -882,16 +897,11 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_binds_existing_user_by_verified_email() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::seeded(
-                seeded_user(),
-            ))),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let user_repository = TestUserRepository::seeded(seeded_user());
+        let login_service = login_service_for_test(
+            user_repository,
+            TestUserIdentityRepository::default(),
+            google_client_for_test(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
@@ -912,16 +922,12 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_reuses_existing_identity_binding() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::seeded(
-                seeded_user(),
-            ))),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::seeded(seeded_identity()),
-            )),
+        let user_repository = TestUserRepository::seeded(seeded_user());
+        let user_identity_repository = TestUserIdentityRepository::seeded(seeded_identity());
+        let login_service = login_service_for_test(
+            user_repository,
+            user_identity_repository,
+            google_client_for_test(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
@@ -942,14 +948,10 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_rejects_missing_oauth_state() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::default())),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let login_service = login_service_for_test(
+            TestUserRepository::default(),
+            TestUserIdentityRepository::default(),
+            google_client_for_test(),
         );
 
         let error = login_service
@@ -966,14 +968,10 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_rejects_invalid_oauth_state() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::default())),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let login_service = login_service_for_test(
+            TestUserRepository::default(),
+            TestUserIdentityRepository::default(),
+            google_client_for_test(),
         );
 
         let error = login_service
@@ -993,16 +991,13 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_returns_binding_conflict_when_email_is_already_bound() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::seeded(
-                seeded_user(),
-            ))),
-            auth_service_for_test(),
-            Some(google_client_for_test()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::seeded(seeded_conflicting_identity()),
-            )),
+        let user_repository = TestUserRepository::seeded(seeded_user());
+        let user_identity_repository =
+            TestUserIdentityRepository::seeded(seeded_conflicting_identity());
+        let login_service = login_service_for_test(
+            user_repository,
+            user_identity_repository,
+            google_client_for_test(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
@@ -1025,14 +1020,10 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_returns_oauth_error_when_exchange_fails() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::default())),
-            auth_service_for_test(),
-            Some(google_client_for_exchange_error()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let login_service = login_service_for_test(
+            TestUserRepository::default(),
+            TestUserIdentityRepository::default(),
+            google_client_for_exchange_error(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
@@ -1052,14 +1043,10 @@ mod tests {
 
     #[tokio::test]
     async fn complete_google_login_returns_oauth_error_when_profile_fetch_fails() {
-        let login_service = LoginService::new(
-            Some(AccountService::new(TestUserRepository::default())),
-            auth_service_for_test(),
-            Some(google_client_for_profile_error()),
-            Some(google_state_service_for_test()),
-            Some(UserIdentityService::new(
-                TestUserIdentityRepository::default(),
-            )),
+        let login_service = login_service_for_test(
+            TestUserRepository::default(),
+            TestUserIdentityRepository::default(),
+            google_client_for_profile_error(),
         );
         let authorization_request = login_service
             .build_google_authorization_request()
