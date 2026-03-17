@@ -7,7 +7,11 @@
 补充说明：
 
 - 当前项目的 DDD 分层约束，额外参考 `food-app-server` 的目录组织和依赖方向：[victorsteven/food-app-server](https://github.com/victorsteven/food-app-server)。
-- 参考重点不是照搬语言细节，而是遵循它在 `interfaces -> application -> domain/infrastructure` 之间保持清晰依赖方向、由组合根统一装配依赖的做法。
+- 该参考项目可以归纳出三个可直接落地的结构特征：
+  - `application/ 只承载用例编排，通过领域仓储接口完成业务流程，不直接触碰 HTTP 和数据库驱动。
+  - `domain/repository/` 定义仓储接口，`infrastructure/persistence` 提供具体实现，组合根统一完成装配。
+  - `interfaces/` 与 `interfaces/middleware` 位于最外层，只负责输入输出、认证上下文和横切能力，不向下绕过 application 直接访问持久化实现。
+- 参考重点不是照搬语言细节，而是将上述依赖方向翻译为当前 Rust 项目的可执行规范，并长期保持 `interfaces -> application -> domain/infrastructure` 的稳定边界。
 
 ## 2. Rust 编码规范
 
@@ -68,6 +72,40 @@
 
 如果一段逻辑脱离 HTTP 仍然成立，它就不应该放在 `interfaces/`。
 
+#### 3.1.1 `interfaces/controller` 与 `interfaces/middleware` 的依赖边界清单
+
+`interfaces/controller/` 允许依赖：
+
+- `crate::application::*` 暴露出的 service 或 use case 入口。
+- `crate::interfaces::dto::*`、`crate::interfaces::response::*` 这类接口层自有类型。
+- `crate::interfaces::AppState`、请求提取器、响应封装、HTTP 状态码等框架对象。
+- 与请求上下文直接相关的轻量对象，例如 `RequestTrace`、已解析的认证上下文。
+
+`interfaces/controller/` 禁止依赖：
+
+- `crate::infrastructure::persistence::*`、`sqlx::*`、`redis::*` 等底层技术实现。
+- 任何数据库连接池、Redis client、外部 SDK client。
+- 承担持久化语义的 repository 实现类型。
+- 为了“少包一层”而在 controller 中重写业务流程、事务流程、权限判定主逻辑。
+
+`interfaces/middleware/` 允许依赖：
+
+- trace、鉴权、限流、审计、请求头处理等横切能力所需的轻量 service。
+- `AppState` 中已经组装好的 application service。
+- 与身份提取直接相关的 DTO、claims、上下文扩展类型。
+
+`interfaces/middleware/` 禁止依赖：
+
+- 直接创建或持有 `PgPool`、Redis 连接、第三方 SDK client。
+- 编写领域规则或复杂业务编排，例如“创建管理员并发送通知”。
+- 直接调用 repository 实现跳过 application service。
+
+落地要求：
+
+- controller 负责“把 HTTP 请求翻译为 application 输入，再把 application 输出翻译为 HTTP 响应”。
+- middleware 负责“在请求进入 controller 前后处理横切关注点”，例如 `X-Trace-Id`、Access Token 校验、管理员身份注入。
+- 如果某段逻辑既被 controller 调用又被 middleware 调用，优先上提到 `application/` 或专门的共享 service，而不是在接口层复制。
+
 ### 3.2 `application/`
 
 职责：
@@ -94,6 +132,59 @@
 - 单个模块的 application service 必须落在独立文件或子目录中，例如 `application/auth.rs` 或 `application/auth/mod.rs`。
 - `interfaces/` 只能依赖 `application` 暴露的 service，不能绕过 service 直接读取基础设施对象。
 - 如果某项能力只是启动期组合容器，而不承载业务语义，应留在组合根或装配代码中，而不是伪装成 application service。
+
+#### 3.2.1 application 层命名规范
+
+结合参考项目中 `user_app.go` 这类薄应用层文件，当前 Rust 项目统一采用“按业务模块命名”的方式：
+
+- 文件命名优先使用模块语义名，例如 `application/auth.rs`、`application/admin.rs`、`application/health.rs`，而不是 `application/auth_service_impl.rs` 这类技术实现名。
+- 当某模块只有一个主要 application service 时，文件内主类型统一命名为 `XxxService`，例如 `AuthService`、`AdminService`。
+- 当某模块变复杂时，升级为子目录：`application/admin/mod.rs`、`application/admin/commands.rs`、`application/admin/queries.rs`、`application/admin/service.rs`。
+- `application/mod.rs` 只做模块导出、聚合容器定义和组合辅助，不直接堆放某个模块的长实现。
+- 方法命名以用例动作命名，优先体现业务意图，例如 `create_admin`、`revoke_session_tokens`、`list_admin_users`，避免 `handle_request`、`process` 这类模糊命名。
+
+#### 3.2.2 application 层文件模板
+
+新增 application 模块时，默认遵循以下模板：
+
+```rust
+use crate::domain::repository::admin_repository::AdminRepository;
+use crate::domain::service::password_hasher::PasswordHasher;
+
+#[derive(Clone)]
+pub struct AdminService<R, H> {
+    admin_repository: R,
+    password_hasher: H,
+}
+
+impl<R, H> AdminService<R, H>
+where
+    R: AdminRepository,
+    H: PasswordHasher,
+{
+    pub fn new(admin_repository: R, password_hasher: H) -> Self {
+        Self {
+            admin_repository,
+            password_hasher,
+        }
+    }
+
+    pub async fn create_admin(&self, command: CreateAdminCommand) -> Result<AdminDto, AdminError> {
+        // 1. 参数规整
+        // 2. 调用领域规则/仓储接口
+        // 3. 组织返回结果
+        todo!()
+    }
+}
+```
+
+模板约束：
+
+- 字段只保存该模块完成用例所必需的依赖，优先是 repository trait、领域服务、事件发布器、鉴权服务等。
+- `new(...)` 只做依赖注入，不在构造函数中执行数据库连接、网络调用或迁移。
+- application 方法负责用例编排、事务边界和跨依赖协调，不直接拼接 SQL，也不直接读取 HTTP 头。
+- 输入输出优先使用 command/query/result 或 DTO，避免把 `axum::extract::*`、`HeaderMap` 等接口层对象带入 application。
+- application 层可以组合多个 repository trait，但不应该依赖具体的 `PostgresAdminRepository` 之类实现类型。
 
 ### 3.3 `domain/`
 
@@ -153,6 +244,73 @@ Builder 模式建议适用于以下对象：
 - 如果某个类型只是把多个基础设施对象机械地重新包成 `XxxInfrastructure`，通常应删除，改为直接传递真实依赖。
 - repository、client、adapter、builder 的命名应直接表达其技术职责，而不是使用泛化的 `manager` 或 `infrastructure` 命名。
 
+#### 3.4.1 `infrastructure/persistence` 的 repository 标准目录布局
+
+参考 `food-app-server` 中“`domain/repository` 定义接口、`infrastructure/persistence/*_repository.go` 提供实现”的做法，当前项目统一采用如下持久化布局规则：
+
+```text
+src/
+  domain/
+    repository/
+      admin.rs
+      user.rs
+  infrastructure/
+    persistence/
+      mod.rs
+      postgres/
+        mod.rs
+        admin_repository.rs
+        user_repository.rs
+        migrations.rs
+      redis/
+        mod.rs
+        token_blacklist_repository.rs
+```
+
+目录规则：
+
+- `domain/repository/` 只定义抽象接口、查询参数和值对象，不包含 SQL、Redis key 规则和驱动类型。
+- `infrastructure/persistence/postgres/` 放 PostgreSQL repository 实现、查询映射、事务辅助、migration 执行辅助。
+- `infrastructure/persistence/redis/` 放 Redis 相关 repository、缓存存取、黑名单或分布式锁等实现。
+- 当某后端只有 builder 和连接校验而尚未出现具体 repository 时，允许继续保留为单文件；一旦出现两个及以上 repository，实现目录必须展开为子目录而不是继续堆在 `postgres.rs` 中。
+
+命名规则：
+
+- trait 命名使用业务语义，例如 `AdminRepository`、`UserRepository`。
+- PostgreSQL 实现命名为 `PostgresAdminRepository`、`PostgresUserRepository`。
+- Redis 实现命名为 `RedisTokenBlacklistRepository`、`RedisIdempotencyRepository`。
+- 文件名统一使用 snake_case，并与主类型保持一致，例如 `admin_repository.rs`、`token_blacklist_repository.rs`。
+
+实现要求：
+
+- repository 实现类型只能出现在 `infrastructure/persistence/**`，不得泄漏到 `interfaces/`。
+- repository 构造函数只接收底层技术依赖与必要配置，例如 `PgPool`、`redis::Client`、表名前缀、key 前缀。
+- repository 负责把数据库模型转换为领域对象或 persistence record，不把 `sqlx::Row`、驱动错误原样向上传播到 controller。
+- 多 repository 共享连接池时，在组合根中复用同一个池，不在每个 repository 内自行建立新连接。
+
+建议模板：
+
+```rust
+use sqlx::PgPool;
+
+use crate::domain::repository::admin::AdminRepository;
+
+#[derive(Clone)]
+pub struct PostgresAdminRepository {
+    pool: PgPool,
+}
+
+impl PostgresAdminRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl AdminRepository for PostgresAdminRepository {
+    // implement repository trait here
+}
+```
+
 ### 3.5 `main.rs`
 
 职责：
@@ -173,6 +331,7 @@ Builder 模式建议适用于以下对象：
 - `main.rs` 与启动引导代码是组合根，负责把基础设施对象装配成 application services，再交给 `interfaces/`。
 - 组合根可以调用 `infrastructure` builder、repository、adapter，也可以创建 `application` service，但不能把具体业务规则回写到入口层。
 - `AppState` 只持有配置、application services 和纯运行时元数据，不直接持有底层基础设施对象。
+- 参考项目中的 `main.go`，装配顺序固定为：配置加载 -> 基础设施初始化 -> repository / adapter 构建 -> application service 构建 -> router/state 注入 -> 服务器启动。
 
 ## 4. 接口规范
 
