@@ -4,6 +4,7 @@ use std::fs;
 
 #[derive(Debug, Deserialize)]
 pub struct HttpConfig {
+    pub name: String,
     pub host: String,
     pub port: u16,
     pub env: String,
@@ -26,7 +27,9 @@ pub struct RedisConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct LogConfig {
+pub struct TelemetryConfig {
+    pub name: String,
+    pub endpoint: String,
     pub level: String,
 }
 
@@ -35,6 +38,7 @@ pub struct AppConfig {
     pub http: HttpConfig,
     pub postgres: PgConfig,
     pub redis: RedisConfig,
+    pub telemetry: TelemetryConfig,
 }
 
 pub fn load_config(path: &str) -> Result<AppConfig> {

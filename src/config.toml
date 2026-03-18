@@ -1,7 +1,8 @@
 [http]
-env = "local"
+name = "kiro-api"
 host = "127.0.0.1"
 port = 3000
+env = "dev"
 
 [postgres]
 username = "accelerator"
@@ -14,5 +15,7 @@ database = "kiro"
 host = "127.0.0.1"
 port = 6379
 
-[log]
+[telemetry]
+name = "kiro-api"
+endoint = "http://127.0.0.1:4317"
 level = "info"

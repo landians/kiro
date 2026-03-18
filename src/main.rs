@@ -19,6 +19,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 async fn main() {
     let c = config::load_config("./src/config.toml").expect("Failed to load configuration");
 
+    println!("telemetry: {:?}", &c.telemetry);
+
     let _pg_pool = PostgresBuilder::new(c.postgres)
         .build()
         .await
@@ -36,7 +38,12 @@ async fn main() {
         .await
         .expect("Failed to bind listener");
 
-    println!("listening on {}", listener.local_addr().unwrap());
+    println!(
+        "[{}] {} listening on {}",
+        c.http.env,
+        c.http.name,
+        listener.local_addr().unwrap()
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
