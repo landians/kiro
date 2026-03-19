@@ -1,7 +1,12 @@
 use tokio::signal;
 
 use crate::{
-    infrastructure::{cache::CacheBuilder, config, persistence::PostgresBuilder},
+    infrastructure::{
+        auth::{AuthServiceBuilder, GoogleAuthServiceBuilder},
+        cache::CacheBuilder,
+        config,
+        persistence::PostgresBuilder,
+    },
     interfaces::{SharedState, controller::build_routes},
 };
 
@@ -17,6 +22,13 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 async fn main() {
     let c = config::load_config("./src/config.toml").expect("Failed to load configuration");
 
+    let auth_service = AuthServiceBuilder::new(c.jwt.clone())
+        .build()
+        .expect("Failed to build auth service");
+    let google_auth_service = GoogleAuthServiceBuilder::new(c.google.clone())
+        .build()
+        .expect("Failed to build google auth service");
+
     let _pg_pool = PostgresBuilder::new(c.postgres)
         .build()
         .await
@@ -27,7 +39,7 @@ async fn main() {
         .await
         .expect("Failed to connect redis");
 
-    let shared_state = SharedState::new();
+    let shared_state = SharedState::new(auth_service, google_auth_service);
     let app = build_routes(shared_state);
 
     let addr = format!("{}:{}", c.http.host, c.http.port);

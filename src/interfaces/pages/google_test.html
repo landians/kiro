@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kiro Google Login Test</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f1e7;
+        --panel: rgba(255, 252, 245, 0.94);
+        --ink: #1b1813;
+        --muted: #6e665a;
+        --accent: #205b46;
+        --accent-strong: #163f31;
+        --border: #d9cfbd;
+        --shadow: 0 30px 80px rgba(29, 25, 16, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(32, 91, 70, 0.18), transparent 26%),
+          radial-gradient(circle at bottom right, rgba(190, 145, 86, 0.18), transparent 30%),
+          linear-gradient(180deg, #f8f3ea 0%, #ece2d1 100%);
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .panel {
+        width: min(760px, 100%);
+        padding: 34px;
+        border-radius: 28px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 4vw, 3.1rem);
+        line-height: 1;
+      }
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+      .meta {
+        margin: 20px 0 28px;
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: #fbf6ed;
+      }
+      .meta code {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--ink);
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 50px;
+        padding: 0 22px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      .button.primary {
+        color: #fff;
+        background: var(--accent);
+      }
+      .button.primary:hover {
+        background: var(--accent-strong);
+      }
+      .hint {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px dashed var(--border);
+        font-size: 0.95rem;
+      }
+      ol {
+        margin: 12px 0 0 20px;
+        padding: 0;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <h1>Google Login Sandbox</h1>
+      <p>This project page lets you manually walk the Google authorization code flow without creating a separate frontend app.</p>
+      <div class="meta">
+        <p><strong>Configured redirect URI</strong></p>
+        <code>__GOOGLE_REDIRECT_URI__</code>
+      </div>
+      <a class="button primary" href="__GOOGLE_AUTHORIZE_URL__">Start Google Login</a>
+      <div class="hint">
+        <p>Test flow:</p>
+        <ol>
+          <li>Click the button and complete Google consent.</li>
+          <li>Google redirects back to this project at <code>/auth/google/callback</code>.</li>
+          <li>The callback page automatically posts the received <code>code</code> to <code>/auth/google/login</code>.</li>
+          <li>The final JSON response is printed on screen for inspection.</li>
+        </ol>
+      </div>
+    </main>
+  </body>
+</html>

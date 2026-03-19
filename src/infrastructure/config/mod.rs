@@ -42,6 +42,13 @@ pub struct JwtConfig {
     pub refresh_secret: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct GoogleConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub http: HttpConfig,
@@ -51,6 +58,8 @@ pub struct AppConfig {
     pub telemetry: TelemetryConfig,
     #[allow(dead_code)]
     pub jwt: JwtConfig,
+    #[allow(dead_code)]
+    pub google: GoogleConfig,
 }
 
 pub fn load_config(path: &str) -> Result<AppConfig> {

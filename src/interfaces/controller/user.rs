@@ -10,7 +10,7 @@ use super::super::SharedState;
 pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/", get(list_users))
-        .route("/:user_id", get(get_user))
+        .route("/{user_id}", get(get_user))
 }
 
 async fn list_users(State(_state): State<SharedState>) -> Json<UserListResponse> {

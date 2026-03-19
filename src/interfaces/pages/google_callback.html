@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kiro Google Callback</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eff5ef;
+        --panel: rgba(255, 255, 255, 0.88);
+        --ink: #162018;
+        --muted: #617062;
+        --border: #d3ded3;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Courier New", Courier, monospace;
+        color: var(--ink);
+        background:
+          linear-gradient(140deg, rgba(24, 83, 58, 0.1), transparent 35%),
+          linear-gradient(180deg, #f7faf7 0%, #edf3ed 100%);
+        padding: 24px;
+      }
+      .shell {
+        width: min(920px, 100%);
+        margin: 0 auto;
+        padding: 28px;
+        border-radius: 24px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        backdrop-filter: blur(10px);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 2rem;
+      }
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .status {
+        margin: 18px 0;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #f8fbf8;
+      }
+      pre {
+        margin: 0;
+        padding: 20px;
+        min-height: 280px;
+        overflow: auto;
+        border-radius: 18px;
+        background: #0f1711;
+        color: #d8f1db;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      a {
+        color: #205b46;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <h1>Google Callback Console</h1>
+      <p>This page receives the Google authorization code, sends it to <code>/auth/google/login</code>, and prints the backend response so you can verify the whole flow.</p>
+      <div id="status" class="status">Waiting for callback parameters...</div>
+      <pre id="output">No response yet.</pre>
+      <p><a href="/auth/google/test">Start over</a></p>
+    </main>
+    <script>
+      const statusEl = document.getElementById("status");
+      const outputEl = document.getElementById("output");
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const error = params.get("error");
+
+      if (error) {
+        statusEl.textContent = `Google returned an error: ${error}`;
+        outputEl.textContent = window.location.search;
+      } else if (!code) {
+        statusEl.textContent = "No code parameter was found in the callback URL.";
+      } else {
+        statusEl.textContent = "Authorization code received. Calling /auth/google/login...";
+
+        fetch("/auth/google/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code })
+        })
+          .then(async (response) => {
+            const text = await response.text();
+            let pretty = text;
+
+            try {
+              pretty = JSON.stringify(JSON.parse(text), null, 2);
+            } catch (_) {}
+
+            statusEl.textContent = `Backend responded with HTTP ${response.status}.`;
+            outputEl.textContent = pretty;
+          })
+          .catch((err) => {
+            statusEl.textContent = "Failed to call /auth/google/login.";
+            outputEl.textContent = String(err);
+          });
+      }
+    </script>
+  </body>
+</html>
