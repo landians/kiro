@@ -26,6 +26,7 @@ pub struct RedisConfig {
     pub port: u16,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct TelemetryConfig {
     pub name: String,
@@ -33,12 +34,23 @@ pub struct TelemetryConfig {
     pub level: String,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct JwtConfig {
+    pub issuer: String,
+    pub access_secret: String,
+    pub refresh_secret: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub http: HttpConfig,
     pub postgres: PgConfig,
     pub redis: RedisConfig,
+    #[allow(dead_code)]
     pub telemetry: TelemetryConfig,
+    #[allow(dead_code)]
+    pub jwt: JwtConfig,
 }
 
 pub fn load_config(path: &str) -> Result<AppConfig> {

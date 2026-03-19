@@ -1,10 +1,8 @@
 use tokio::signal;
 
-use infrastructure::config;
-
 use crate::{
-    infrastructure::{cache::CacheBuilder, persistence::PostgresBuilder},
-    interfaces::controller::build_routes,
+    infrastructure::{cache::CacheBuilder, config, persistence::PostgresBuilder},
+    interfaces::{SharedState, controller::build_routes},
 };
 
 mod application;
@@ -19,8 +17,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 async fn main() {
     let c = config::load_config("./src/config.toml").expect("Failed to load configuration");
 
-    println!("telemetry: {:?}", &c.telemetry);
-
     let _pg_pool = PostgresBuilder::new(c.postgres)
         .build()
         .await
@@ -31,7 +27,8 @@ async fn main() {
         .await
         .expect("Failed to connect redis");
 
-    let app = build_routes();
+    let shared_state = SharedState::new();
+    let app = build_routes(shared_state);
 
     let addr = format!("{}:{}", c.http.host, c.http.port);
     let listener = tokio::net::TcpListener::bind(addr)

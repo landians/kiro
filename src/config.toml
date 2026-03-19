@@ -17,5 +17,10 @@ port = 6379
 
 [telemetry]
 name = "kiro-api"
-endoint = "http://127.0.0.1:4317"
+endpoint = "http://127.0.0.1:4317"
 level = "info"
+
+[jwt]
+issuer = "kiro-api"
+access_secret = "change-me-access-secret"
+refresh_secret = "change-me-refresh-secret"
