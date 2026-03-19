@@ -22,16 +22,9 @@ pub struct GoogleAuthService {
     client_id: String,
     client_secret: String,
     redirect_uri: String,
-    transport: GoogleAuthTransport,
-}
-
-#[derive(Clone)]
-enum GoogleAuthTransport {
-    Http {
-        http_client: Client,
-        token_endpoint: String,
-        userinfo_endpoint: String,
-    },
+    http_client: Client,
+    token_endpoint: String,
+    userinfo_endpoint: String,
 }
 
 impl GoogleAuthServiceBuilder {
@@ -46,29 +39,17 @@ impl GoogleAuthServiceBuilder {
     }
 
     pub fn build(self) -> Result<GoogleAuthService, AuthError> {
-        if self.client_id.trim().is_empty() {
-            return Err(AuthError::EmptyGoogleClientId);
-        }
-
-        if self.client_secret.trim().is_empty() {
-            return Err(AuthError::EmptyGoogleClientSecret);
-        }
-
-        if self.redirect_uri.trim().is_empty() {
-            return Err(AuthError::EmptyGoogleRedirectUri);
-        }
-
-        let transport = GoogleAuthTransport::Http {
-            http_client: Client::new(),
-            token_endpoint: self.token_endpoint,
-            userinfo_endpoint: self.userinfo_endpoint,
-        };
+        validate_google_builder_field(&self.client_id, AuthError::EmptyGoogleClientId)?;
+        validate_google_builder_field(&self.client_secret, AuthError::EmptyGoogleClientSecret)?;
+        validate_google_builder_field(&self.redirect_uri, AuthError::EmptyGoogleRedirectUri)?;
 
         Ok(GoogleAuthService {
             client_id: self.client_id,
             client_secret: self.client_secret,
             redirect_uri: self.redirect_uri,
-            transport,
+            http_client: Client::new(),
+            token_endpoint: self.token_endpoint,
+            userinfo_endpoint: self.userinfo_endpoint,
         })
     }
 }
@@ -95,77 +76,59 @@ impl GoogleAuthService {
     }
 
     async fn exchange_code_for_access_token(&self, code: &str) -> Result<String, AuthError> {
-        match &self.transport {
-            GoogleAuthTransport::Http {
-                http_client,
-                token_endpoint,
-                ..
-            } => {
-                let response = http_client
-                    .post(token_endpoint)
-                    .form(&[
-                        ("code", code),
-                        ("client_id", self.client_id.as_str()),
-                        ("client_secret", self.client_secret.as_str()),
-                        ("redirect_uri", self.redirect_uri.as_str()),
-                        ("grant_type", "authorization_code"),
-                    ])
-                    .send()
-                    .await
-                    .map_err(AuthError::GoogleUpstream)?;
+        let response = self
+            .http_client
+            .post(&self.token_endpoint)
+            .form(&[
+                ("code", code),
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.client_secret.as_str()),
+                ("redirect_uri", self.redirect_uri.as_str()),
+                ("grant_type", "authorization_code"),
+            ])
+            .send()
+            .await
+            .map_err(AuthError::GoogleUpstream)?;
 
-                match response.status() {
-                    status if status.is_success() => {
-                        let payload = response
-                            .json::<GoogleTokenResponse>()
-                            .await
-                            .map_err(AuthError::GoogleUpstream)?;
-
-                        Ok(payload.access_token)
-                    }
-                    StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED => {
-                        Err(AuthError::InvalidGoogleAuthorizationCode)
-                    }
-                    status => Err(AuthError::GoogleUpstreamStatus {
-                        status: status.as_u16(),
-                    }),
-                }
-            }
+        if matches!(
+            response.status(),
+            StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED
+        ) {
+            return Err(AuthError::InvalidGoogleAuthorizationCode);
         }
+
+        let response = ensure_success_status(response)?;
+        let payload = response
+            .json::<GoogleTokenResponse>()
+            .await
+            .map_err(AuthError::GoogleUpstream)?;
+
+        Ok(payload.access_token)
     }
 
     async fn fetch_user_info(&self, access_token: &str) -> Result<GoogleUserProfile, AuthError> {
-        match &self.transport {
-            GoogleAuthTransport::Http {
-                http_client,
-                userinfo_endpoint,
-                ..
-            } => {
-                let response = http_client
-                    .get(userinfo_endpoint)
-                    .bearer_auth(access_token)
-                    .send()
-                    .await
-                    .map_err(AuthError::GoogleUpstream)?;
+        let response = self
+            .http_client
+            .get(&self.userinfo_endpoint)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(AuthError::GoogleUpstream)?;
 
-                match response.status() {
-                    status if status.is_success() => {
-                        let payload = response
-                            .json::<GoogleUserInfoResponse>()
-                            .await
-                            .map_err(AuthError::GoogleUpstream)?;
-
-                        payload.try_into()
-                    }
-                    StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED => {
-                        Err(AuthError::InvalidGoogleAccessToken)
-                    }
-                    status => Err(AuthError::GoogleUpstreamStatus {
-                        status: status.as_u16(),
-                    }),
-                }
-            }
+        if matches!(
+            response.status(),
+            StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED
+        ) {
+            return Err(AuthError::InvalidGoogleAccessToken);
         }
+
+        let response = ensure_success_status(response)?;
+        let payload = response
+            .json::<GoogleUserInfoResponse>()
+            .await
+            .map_err(AuthError::GoogleUpstream)?;
+
+        payload.try_into()
     }
 }
 
@@ -206,6 +169,24 @@ impl TryFrom<GoogleUserInfoResponse> for GoogleUserProfile {
             picture: value.picture,
         })
     }
+}
+
+fn validate_google_builder_field(value: &str, err: AuthError) -> Result<(), AuthError> {
+    if value.trim().is_empty() {
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+fn ensure_success_status(response: reqwest::Response) -> Result<reqwest::Response, AuthError> {
+    if response.status().is_success() {
+        return Ok(response);
+    }
+
+    Err(AuthError::GoogleUpstreamStatus {
+        status: response.status().as_u16(),
+    })
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]

@@ -41,17 +41,20 @@ async fn google_login(
         .google_auth_service()
         .login_with_code(&request.code)
         .await
-        .map_err(map_google_auth_error)?;
+        .map_err(GoogleAuthAppError::from)
+        .map_err(AppError::from)?;
 
     let subject = format!("google:{}", user.sub);
     let access_token = state
         .auth_service()
         .generate_access_token(&subject)
-        .map_err(map_internal_auth_error)?;
+        .map_err(InternalAuthAppError::from)
+        .map_err(AppError::from)?;
     let refresh_token = state
         .auth_service()
         .generate_refresh_token(&subject)
-        .map_err(map_internal_auth_error)?;
+        .map_err(InternalAuthAppError::from)
+        .map_err(AppError::from)?;
 
     Ok(Json(build_google_login_response(
         user,
@@ -75,30 +78,51 @@ fn build_google_login_response(
     }
 }
 
-fn map_google_auth_error(err: AuthError) -> AppError {
-    match err {
-        AuthError::InvalidGoogleAuthorizationCode => {
-            AppError::unauthorized("invalid_google_authorization_code", err.to_string())
-        }
-        AuthError::InvalidGoogleAccessToken => {
-            AppError::unauthorized("invalid_google_access_token", err.to_string())
-        }
-        AuthError::InvalidGoogleUserInfo { reason } => {
-            AppError::unauthorized("invalid_google_user_info", reason)
-        }
-        AuthError::GoogleUpstream(error) => {
-            AppError::bad_gateway("google_upstream_error", error.to_string())
-        }
-        AuthError::GoogleUpstreamStatus { status } => AppError::bad_gateway(
-            "google_upstream_error",
-            format!("google oauth endpoint returned unexpected status {status}"),
-        ),
-        other => map_internal_auth_error(other),
+struct GoogleAuthAppError(AuthError);
+
+struct InternalAuthAppError(AuthError);
+
+impl From<AuthError> for GoogleAuthAppError {
+    fn from(value: AuthError) -> Self {
+        Self(value)
     }
 }
 
-fn map_internal_auth_error(err: AuthError) -> AppError {
-    AppError::bad_gateway("auth_service_error", err.to_string())
+impl From<AuthError> for InternalAuthAppError {
+    fn from(value: AuthError) -> Self {
+        Self(value)
+    }
+}
+
+impl From<GoogleAuthAppError> for AppError {
+    fn from(value: GoogleAuthAppError) -> Self {
+        match value.0 {
+            AuthError::InvalidGoogleAuthorizationCode => AppError::unauthorized(
+                "invalid_google_authorization_code",
+                "invalid google authorization code",
+            ),
+            AuthError::InvalidGoogleAccessToken => {
+                AppError::unauthorized("invalid_google_access_token", "invalid google access token")
+            }
+            AuthError::InvalidGoogleUserInfo { reason } => {
+                AppError::unauthorized("invalid_google_user_info", reason)
+            }
+            AuthError::GoogleUpstream(error) => {
+                AppError::bad_gateway("google_upstream_error", error.to_string())
+            }
+            AuthError::GoogleUpstreamStatus { status } => AppError::bad_gateway(
+                "google_upstream_error",
+                format!("google oauth endpoint returned unexpected status {status}"),
+            ),
+            other => AppError::from(InternalAuthAppError::from(other)),
+        }
+    }
+}
+
+impl From<InternalAuthAppError> for AppError {
+    fn from(value: InternalAuthAppError) -> Self {
+        AppError::bad_gateway("auth_service_error", value.0.to_string())
+    }
 }
 
 async fn google_test_page(State(state): State<SharedState>) -> Html<String> {
