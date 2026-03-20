@@ -5,3 +5,5 @@
 .DS_Store
 
 AGENTS.md
+
+src/config.toml
