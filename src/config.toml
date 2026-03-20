@@ -26,6 +26,6 @@ access_secret = "change-me-access-secret"
 refresh_secret = "change-me-refresh-secret"
 
 [google]
-client_id = "902955807354-449iqdm4kedqcas2dtce2qq3aj7n4g5s.apps.googleusercontent.com"
-client_secret = "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"
+client_id = "xxxx"
+client_secret = "xxxx"
 redirect_uri = "http://localhost:3000/auth/google/callback"
