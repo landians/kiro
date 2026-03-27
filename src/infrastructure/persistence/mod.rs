@@ -1,3 +1,6 @@
+pub mod user_auth_identity_repository;
+pub mod user_repository;
+
 use anyhow::{Ok, Result};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
