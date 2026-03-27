@@ -20,7 +20,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() {
-    let c = config::load_config("./src/config.toml").expect("Failed to load configuration");
+    let c = config::load_config("config.toml").expect("Failed to load configuration");
 
     let auth_service = AuthServiceBuilder::new(c.jwt.clone())
         .build()
