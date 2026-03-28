@@ -1,75 +1,193 @@
-use anyhow::{Result, bail};
+#![allow(dead_code)]
+
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::{PgConnection, Row, postgres::PgRow};
 
 use crate::domain::{
     entity::user::{AccountStatus, User},
     repository::user_repository::{
-        CreateUser,
-        UpdateUserProfile,
-        UserRepository as UserRepositoryTrait,
+        CreateUser, UpdateUserProfile, UserRepository as UserRepositoryTrait,
     },
 };
 
-#[derive(Clone)]
-pub struct UserRepository {
-    pool: PgPool,
-}
+#[derive(Clone, Default)]
+pub struct UserRepository;
 
 impl UserRepository {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn pool(&self) -> &PgPool {
-        &self.pool
-    }
+    fn map_user(row: PgRow) -> Result<User> {
+        let account_status = row
+            .try_get::<String, _>("account_status")
+            .context("failed to decode users.account_status")?;
 
-    #[allow(dead_code)]
-    fn build_user(
-        &self,
-        id: i64,
-        primary_email: Option<String>,
-        email_verified: bool,
-        display_name: Option<String>,
-        avatar_url: Option<String>,
-        account_status: AccountStatus,
-        frozen_at: Option<DateTime<Utc>>,
-        banned_at: Option<DateTime<Utc>>,
-        last_login_at: Option<DateTime<Utc>>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> User {
-        User {
-            id,
-            primary_email,
-            email_verified,
-            display_name,
-            avatar_url,
-            account_status,
-            frozen_at,
-            banned_at,
-            last_login_at,
-            created_at,
-            updated_at,
-        }
+        Ok(User {
+            id: row.try_get("id").context("failed to decode users.id")?,
+            primary_email: row
+                .try_get("primary_email")
+                .context("failed to decode users.primary_email")?,
+            email_verified: row
+                .try_get("email_verified")
+                .context("failed to decode users.email_verified")?,
+            display_name: row
+                .try_get("display_name")
+                .context("failed to decode users.display_name")?,
+            avatar_url: row
+                .try_get("avatar_url")
+                .context("failed to decode users.avatar_url")?,
+            account_status: AccountStatus::from_db(&account_status)?,
+            frozen_at: row
+                .try_get("frozen_at")
+                .context("failed to decode users.frozen_at")?,
+            banned_at: row
+                .try_get("banned_at")
+                .context("failed to decode users.banned_at")?,
+            last_login_at: row
+                .try_get("last_login_at")
+                .context("failed to decode users.last_login_at")?,
+            created_at: row
+                .try_get("created_at")
+                .context("failed to decode users.created_at")?,
+            updated_at: row
+                .try_get("updated_at")
+                .context("failed to decode users.updated_at")?,
+        })
     }
 }
 
 impl UserRepositoryTrait for UserRepository {
-    async fn create(&self, _user: CreateUser) -> Result<User> {
-        bail!("UserRepository::create is not implemented yet")
+    async fn create(&self, conn: &mut PgConnection, user: CreateUser) -> Result<User> {
+        let row = sqlx::query(
+            r#"
+            insert into users (
+                primary_email,
+                email_verified,
+                display_name,
+                avatar_url,
+                last_login_at
+            )
+            values ($1, $2, $3, $4, $5)
+            returning
+                id,
+                primary_email,
+                email_verified,
+                display_name,
+                avatar_url,
+                account_status,
+                frozen_at,
+                banned_at,
+                last_login_at,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(user.primary_email)
+        .bind(user.email_verified)
+        .bind(user.display_name)
+        .bind(user.avatar_url)
+        .bind(user.last_login_at)
+        .fetch_one(conn)
+        .await
+        .context("failed to insert user")?;
+
+        Self::map_user(row)
     }
 
-    async fn find_by_id(&self, _id: i64) -> Result<Option<User>> {
-        bail!("UserRepository::find_by_id is not implemented yet")
+    async fn find_by_id(&self, conn: &mut PgConnection, id: i64) -> Result<Option<User>> {
+        let row = sqlx::query(
+            r#"
+            select
+                id,
+                primary_email,
+                email_verified,
+                display_name,
+                avatar_url,
+                account_status,
+                frozen_at,
+                banned_at,
+                last_login_at,
+                created_at,
+                updated_at
+            from users
+            where id = $1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(conn)
+        .await
+        .context("failed to query user by id")?;
+
+        row.map(Self::map_user).transpose()
     }
 
-    async fn update_profile(&self, _id: i64, _profile: UpdateUserProfile) -> Result<User> {
-        bail!("UserRepository::update_profile is not implemented yet")
+    async fn update_profile(
+        &self,
+        conn: &mut PgConnection,
+        id: i64,
+        profile: UpdateUserProfile,
+    ) -> Result<User> {
+        let row = sqlx::query(
+            r#"
+            update users
+            set
+                primary_email = $2,
+                email_verified = $3,
+                display_name = $4,
+                avatar_url = $5,
+                last_login_at = $6,
+                updated_at = now()
+            where id = $1
+            returning
+                id,
+                primary_email,
+                email_verified,
+                display_name,
+                avatar_url,
+                account_status,
+                frozen_at,
+                banned_at,
+                last_login_at,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(profile.primary_email)
+        .bind(profile.email_verified)
+        .bind(profile.display_name)
+        .bind(profile.avatar_url)
+        .bind(profile.last_login_at)
+        .fetch_one(conn)
+        .await
+        .context("failed to update user profile")?;
+
+        Self::map_user(row)
     }
 
-    async fn touch_last_login(&self, _id: i64, _last_login_at: DateTime<Utc>) -> Result<()> {
-        bail!("UserRepository::touch_last_login is not implemented yet")
+    async fn touch_last_login(
+        &self,
+        conn: &mut PgConnection,
+        id: i64,
+        last_login_at: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            update users
+            set
+                last_login_at = $2,
+                updated_at = now()
+            where id = $1
+            "#,
+        )
+        .bind(id)
+        .bind(last_login_at)
+        .execute(conn)
+        .await
+        .context("failed to touch users.last_login_at")?;
+
+        Ok(())
     }
 }

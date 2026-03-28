@@ -29,9 +29,25 @@ impl AppError {
         }
     }
 
+    pub fn forbidden(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code,
+            message: message.into(),
+        }
+    }
+
     pub fn bad_gateway(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_GATEWAY,
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn internal_server_error(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
             code,
             message: message.into(),
         }

@@ -4,14 +4,19 @@ use axum::{
     response::Html,
     routing::{get, post},
 };
+use chrono::Utc;
 
 use crate::{
+    application::auth::google_login::{GoogleLogin, GoogleLoginError},
     infrastructure::auth::{
         ACCESS_TOKEN_EXPIRES_IN_SECS, AuthError, GoogleUserProfile, REFRESH_TOKEN_EXPIRES_IN_SECS,
     },
     interfaces::{
         SharedState,
-        dto::auth::{GoogleLoginRequest, GoogleLoginResponse},
+        dto::{
+            auth::{GoogleLoginRequest, GoogleLoginResponse},
+            user::UserDto,
+        },
         error::AppError,
     },
 };
@@ -37,14 +42,21 @@ async fn google_login(
         ));
     }
 
-    let user = state
+    let google_user = state
         .google_auth_service()
         .login_with_code(&request.code)
         .await
         .map_err(GoogleAuthAppError::from)
         .map_err(AppError::from)?;
 
-    let subject = format!("google:{}", user.sub);
+    let user = state
+        .auth_logic()
+        .google_login(build_google_login(google_user))
+        .await
+        .map_err(GoogleLoginAppError::from)
+        .map_err(AppError::from)?;
+
+    let subject = user.id.to_string();
     let access_token = state
         .auth_service()
         .generate_access_token(&subject)
@@ -64,12 +76,12 @@ async fn google_login(
 }
 
 fn build_google_login_response(
-    user: GoogleUserProfile,
+    user: crate::domain::entity::user::User,
     access_token: String,
     refresh_token: String,
 ) -> GoogleLoginResponse {
     GoogleLoginResponse {
-        user,
+        user: UserDto::from(user),
         access_token,
         refresh_token,
         token_type: "Bearer",
@@ -78,9 +90,21 @@ fn build_google_login_response(
     }
 }
 
+fn build_google_login(user: GoogleUserProfile) -> GoogleLogin {
+    GoogleLogin {
+        provider_user_id: user.sub,
+        email: Some(user.email),
+        email_verified: user.email_verified,
+        display_name: user.name,
+        avatar_url: user.picture,
+        login_at: Utc::now(),
+    }
+}
+
 struct GoogleAuthAppError(AuthError);
 
 struct InternalAuthAppError(AuthError);
+struct GoogleLoginAppError(anyhow::Error);
 
 impl From<AuthError> for GoogleAuthAppError {
     fn from(value: AuthError) -> Self {
@@ -90,6 +114,12 @@ impl From<AuthError> for GoogleAuthAppError {
 
 impl From<AuthError> for InternalAuthAppError {
     fn from(value: AuthError) -> Self {
+        Self(value)
+    }
+}
+
+impl From<anyhow::Error> for GoogleLoginAppError {
+    fn from(value: anyhow::Error) -> Self {
         Self(value)
     }
 }
@@ -121,7 +151,31 @@ impl From<GoogleAuthAppError> for AppError {
 
 impl From<InternalAuthAppError> for AppError {
     fn from(value: InternalAuthAppError) -> Self {
-        AppError::bad_gateway("auth_service_error", value.0.to_string())
+        AppError::internal_server_error("auth_service_error", value.0.to_string())
+    }
+}
+
+impl From<GoogleLoginAppError> for AppError {
+    fn from(value: GoogleLoginAppError) -> Self {
+        if let Some(error) = value.0.downcast_ref::<GoogleLoginError>() {
+            return match error {
+                GoogleLoginError::MissingLinkedUser {
+                    user_id,
+                    identity_id,
+                } => AppError::internal_server_error(
+                    "missing_linked_user",
+                    format!("linked user {user_id} is missing for auth identity {identity_id}"),
+                ),
+                GoogleLoginError::UserFrozen { user_id } => {
+                    AppError::forbidden("user_frozen", format!("user {user_id} is frozen"))
+                }
+                GoogleLoginError::UserBanned { user_id } => {
+                    AppError::forbidden("user_banned", format!("user {user_id} is banned"))
+                }
+            };
+        }
+
+        AppError::internal_server_error("google_login_error", value.0.to_string())
     }
 }
 

@@ -5,7 +5,10 @@ pub mod middleware;
 
 use std::sync::Arc;
 
-use crate::infrastructure::auth::{AuthService, GoogleAuthService};
+use crate::{
+    application::auth::AppAuthLogic,
+    infrastructure::auth::{AuthService, GoogleAuthService},
+};
 
 #[derive(Clone)]
 pub struct SharedState {
@@ -15,14 +18,20 @@ pub struct SharedState {
 struct SharedStateInner {
     auth_service: AuthService,
     google_auth_service: GoogleAuthService,
+    auth_logic: AppAuthLogic,
 }
 
 impl SharedState {
-    pub fn new(auth_service: AuthService, google_auth_service: GoogleAuthService) -> Self {
+    pub fn new(
+        auth_service: AuthService,
+        google_auth_service: GoogleAuthService,
+        auth_logic: AppAuthLogic,
+    ) -> Self {
         Self {
             inner: Arc::new(SharedStateInner {
                 auth_service,
                 google_auth_service,
+                auth_logic,
             }),
         }
     }
@@ -33,5 +42,9 @@ impl SharedState {
 
     pub fn google_auth_service(&self) -> &GoogleAuthService {
         &self.inner.google_auth_service
+    }
+
+    pub fn auth_logic(&self) -> &AppAuthLogic {
+        &self.inner.auth_logic
     }
 }

@@ -1,11 +1,15 @@
 use tokio::signal;
 
 use crate::{
+    application::auth::AuthLogic,
     infrastructure::{
         auth::{AuthServiceBuilder, GoogleAuthServiceBuilder},
         cache::CacheBuilder,
         config,
-        persistence::PostgresBuilder,
+        persistence::{
+            PostgresBuilder, user_auth_identity_repository::UserAuthIdentityRepository,
+            user_repository::UserRepository,
+        },
     },
     interfaces::{SharedState, controller::build_routes},
 };
@@ -29,7 +33,7 @@ async fn main() {
         .build()
         .expect("Failed to build google auth service");
 
-    let _pg_pool = PostgresBuilder::new(c.postgres)
+    let pg_pool = PostgresBuilder::new(c.postgres)
         .build()
         .await
         .expect("Failed to connect postgres");
@@ -39,7 +43,15 @@ async fn main() {
         .await
         .expect("Failed to connect redis");
 
-    let shared_state = SharedState::new(auth_service, google_auth_service);
+    let user_repository = UserRepository::new();
+    let user_auth_identity_repository = UserAuthIdentityRepository::new();
+    let auth_logic = AuthLogic::new(
+        pg_pool.clone(),
+        user_repository,
+        user_auth_identity_repository,
+    );
+
+    let shared_state = SharedState::new(auth_service, google_auth_service, auth_logic);
     let app = build_routes(shared_state);
 
     let addr = format!("{}:{}", c.http.host, c.http.port);

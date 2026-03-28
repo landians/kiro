@@ -1,5 +1,8 @@
+#![allow(dead_code)]
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use sqlx::PgConnection;
 
 use crate::domain::entity::user::User;
 
@@ -22,11 +25,21 @@ pub struct UpdateUserProfile {
 }
 
 pub trait UserRepository: Send + Sync {
-    async fn create(&self, user: CreateUser) -> Result<User>;
+    async fn create(&self, conn: &mut PgConnection, user: CreateUser) -> Result<User>;
 
-    async fn find_by_id(&self, id: i64) -> Result<Option<User>>;
+    async fn find_by_id(&self, conn: &mut PgConnection, id: i64) -> Result<Option<User>>;
 
-    async fn update_profile(&self, id: i64, profile: UpdateUserProfile) -> Result<User>;
+    async fn update_profile(
+        &self,
+        conn: &mut PgConnection,
+        id: i64,
+        profile: UpdateUserProfile,
+    ) -> Result<User>;
 
-    async fn touch_last_login(&self, id: i64, last_login_at: DateTime<Utc>) -> Result<()>;
+    async fn touch_last_login(
+        &self,
+        conn: &mut PgConnection,
+        id: i64,
+        last_login_at: DateTime<Utc>,
+    ) -> Result<()>;
 }

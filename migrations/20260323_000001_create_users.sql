@@ -26,7 +26,6 @@ create table user_auth_identities (
     provider_email_verified boolean not null default false,
     provider_display_name varchar(255) null,
     provider_avatar_url text null,
-    provider_profile jsonb not null default '{}'::jsonb,
     last_login_at timestamptz null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),

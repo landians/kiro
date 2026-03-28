@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::infrastructure::auth::GoogleUserProfile;
+use super::user::UserDto;
 
 #[derive(Debug, Deserialize)]
 pub struct GoogleLoginRequest {
@@ -9,7 +9,7 @@ pub struct GoogleLoginRequest {
 
 #[derive(Debug, Serialize)]
 pub struct GoogleLoginResponse {
-    pub user: GoogleUserProfile,
+    pub user: UserDto,
     pub access_token: String,
     pub refresh_token: String,
     pub token_type: &'static str,
