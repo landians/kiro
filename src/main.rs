@@ -1,20 +1,18 @@
 use tokio::signal;
 
 use crate::{
-    application::auth::AuthLogic,
+    bootstrap::auth::build_auth_logic,
     infrastructure::{
         auth::{AuthServiceBuilder, GoogleAuthServiceBuilder},
         cache::CacheBuilder,
         config,
-        persistence::{
-            PostgresBuilder, user_auth_identity_repository::UserAuthIdentityRepository,
-            user_repository::UserRepository,
-        },
+        persistence::PostgresBuilder,
     },
     interfaces::{SharedState, controller::build_routes},
 };
 
 mod application;
+mod bootstrap;
 mod domain;
 mod infrastructure;
 mod interfaces;
@@ -43,13 +41,7 @@ async fn main() {
         .await
         .expect("Failed to connect redis");
 
-    let user_repository = UserRepository::new();
-    let user_auth_identity_repository = UserAuthIdentityRepository::new();
-    let auth_logic = AuthLogic::new(
-        pg_pool.clone(),
-        user_repository,
-        user_auth_identity_repository,
-    );
+    let auth_logic = build_auth_logic(pg_pool.clone());
 
     let shared_state = SharedState::new(auth_service, google_auth_service, auth_logic);
     let app = build_routes(shared_state);
@@ -91,7 +83,9 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {},
+        _ = ctrl_c => {
+            println!("http service exit with graceful shutdown.")
+        },
         _ = terminate => {},
     }
 }

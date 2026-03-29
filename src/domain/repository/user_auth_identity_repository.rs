@@ -28,22 +28,36 @@ pub struct UpdateUserAuthIdentitySnapshot {
 }
 
 pub trait UserAuthIdentityRepository: Send + Sync {
-    async fn create(
+    async fn create(&self, identity: CreateUserAuthIdentity) -> Result<UserAuthIdentity>;
+
+    async fn create_tx(
         &self,
-        conn: &mut PgConnection,
+        tx: &mut PgConnection,
         identity: CreateUserAuthIdentity,
     ) -> Result<UserAuthIdentity>;
 
     async fn find_by_provider_user_id(
         &self,
-        conn: &mut PgConnection,
+        provider: AuthProvider,
+        provider_user_id: &str,
+    ) -> Result<Option<UserAuthIdentity>>;
+
+    async fn find_by_provider_user_id_tx(
+        &self,
+        tx: &mut PgConnection,
         provider: AuthProvider,
         provider_user_id: &str,
     ) -> Result<Option<UserAuthIdentity>>;
 
     async fn update_snapshot(
         &self,
-        conn: &mut PgConnection,
+        id: i64,
+        snapshot: UpdateUserAuthIdentitySnapshot,
+    ) -> Result<UserAuthIdentity>;
+
+    async fn update_snapshot_tx(
+        &self,
+        tx: &mut PgConnection,
         id: i64,
         snapshot: UpdateUserAuthIdentitySnapshot,
     ) -> Result<UserAuthIdentity>;

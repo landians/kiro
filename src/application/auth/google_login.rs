@@ -56,7 +56,7 @@ where
 
         let identity = self
             .user_auth_identity_repository
-            .find_by_provider_user_id(tx.as_mut(), AuthProvider::Google, &login.provider_user_id)
+            .find_by_provider_user_id_tx(tx.as_mut(), AuthProvider::Google, &login.provider_user_id)
             .await
             .context("failed to load google user auth identity")?;
 
@@ -85,12 +85,12 @@ where
         self.ensure_user_can_login(&user)?;
 
         self.user_auth_identity_repository
-            .update_snapshot(conn, identity.id, self.build_identity_snapshot(login))
+            .update_snapshot_tx(conn, identity.id, self.build_identity_snapshot(login))
             .await
             .context("failed to update google user auth identity snapshot")?;
 
         self.user_repository
-            .update_profile(conn, user.id, self.build_user_profile(login))
+            .update_profile_tx(conn, user.id, self.build_user_profile(login))
             .await
             .context("failed to update user profile during google login")
     }
@@ -102,12 +102,12 @@ where
     ) -> Result<User> {
         let user = self
             .user_repository
-            .create(conn, self.build_create_user(login))
+            .create_tx(conn, self.build_create_user(login))
             .await
             .context("failed to create user during google login")?;
 
         self.user_auth_identity_repository
-            .create(conn, self.build_create_identity(user.id, login))
+            .create_tx(conn, self.build_create_identity(user.id, login))
             .await
             .context("failed to create google user auth identity")?;
 
@@ -121,7 +121,7 @@ where
     ) -> Result<User> {
         let user = self
             .user_repository
-            .find_by_id(conn, identity.user_id)
+            .find_by_id_tx(conn, identity.user_id)
             .await
             .context("failed to load user linked to google auth identity")?;
 

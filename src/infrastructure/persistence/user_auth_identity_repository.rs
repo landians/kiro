@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
-use sqlx::{PgConnection, Row, postgres::PgRow};
+use sqlx::{PgConnection, PgPool, Row, postgres::PgRow};
 
 use crate::domain::{
     entity::user_auth_identity::{AuthProvider, UserAuthIdentity},
@@ -11,12 +11,81 @@ use crate::domain::{
     },
 };
 
-#[derive(Clone, Default)]
-pub struct UserAuthIdentityRepository;
+#[derive(Clone)]
+pub struct UserAuthIdentityRepository {
+    pool: PgPool,
+}
+
+const CREATE_USER_AUTH_IDENTITY_SQL: &str = r#"
+    insert into user_auth_identities (
+        user_id,
+        provider,
+        provider_user_id,
+        provider_email,
+        provider_email_verified,
+        provider_display_name,
+        provider_avatar_url,
+        last_login_at
+    )
+    values ($1, $2, $3, $4, $5, $6, $7, $8)
+    returning
+        id,
+        user_id,
+        provider,
+        provider_user_id,
+        provider_email,
+        provider_email_verified,
+        provider_display_name,
+        provider_avatar_url,
+        last_login_at,
+        created_at,
+        updated_at
+"#;
+
+const FIND_USER_AUTH_IDENTITY_BY_PROVIDER_USER_ID_SQL: &str = r#"
+    select
+        id,
+        user_id,
+        provider,
+        provider_user_id,
+        provider_email,
+        provider_email_verified,
+        provider_display_name,
+        provider_avatar_url,
+        last_login_at,
+        created_at,
+        updated_at
+    from user_auth_identities
+    where provider = $1 and provider_user_id = $2
+"#;
+
+const UPDATE_USER_AUTH_IDENTITY_SNAPSHOT_SQL: &str = r#"
+    update user_auth_identities
+    set
+        provider_email = $2,
+        provider_email_verified = $3,
+        provider_display_name = $4,
+        provider_avatar_url = $5,
+        last_login_at = $6,
+        updated_at = now()
+    where id = $1
+    returning
+        id,
+        user_id,
+        provider,
+        provider_user_id,
+        provider_email,
+        provider_email_verified,
+        provider_display_name,
+        provider_avatar_url,
+        last_login_at,
+        created_at,
+        updated_at
+"#;
 
 impl UserAuthIdentityRepository {
-    pub fn new() -> Self {
-        Self
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     fn map_user_auth_identity(row: PgRow) -> Result<UserAuthIdentity> {
@@ -61,126 +130,110 @@ impl UserAuthIdentityRepository {
 }
 
 impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
-    async fn create(
+    async fn create(&self, identity: CreateUserAuthIdentity) -> Result<UserAuthIdentity> {
+        let row = sqlx::query(CREATE_USER_AUTH_IDENTITY_SQL)
+            .bind(identity.user_id)
+            .bind(identity.provider.as_str())
+            .bind(identity.provider_user_id)
+            .bind(identity.provider_email)
+            .bind(identity.provider_email_verified)
+            .bind(identity.provider_display_name)
+            .bind(identity.provider_avatar_url)
+            .bind(identity.last_login_at)
+            .fetch_one(&self.pool)
+            .await
+            .context("failed to insert user auth identity")?;
+
+        Self::map_user_auth_identity(row)
+    }
+
+    async fn create_tx(
         &self,
-        conn: &mut PgConnection,
+        tx: &mut PgConnection,
         identity: CreateUserAuthIdentity,
     ) -> Result<UserAuthIdentity> {
-        let row = sqlx::query(
-            r#"
-            insert into user_auth_identities (
-                user_id,
-                provider,
-                provider_user_id,
-                provider_email,
-                provider_email_verified,
-                provider_display_name,
-                provider_avatar_url,
-                last_login_at
-            )
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
-            returning
-                id,
-                user_id,
-                provider,
-                provider_user_id,
-                provider_email,
-                provider_email_verified,
-                provider_display_name,
-                provider_avatar_url,
-                last_login_at,
-                created_at,
-                updated_at
-            "#,
-        )
-        .bind(identity.user_id)
-        .bind(identity.provider.as_str())
-        .bind(identity.provider_user_id)
-        .bind(identity.provider_email)
-        .bind(identity.provider_email_verified)
-        .bind(identity.provider_display_name)
-        .bind(identity.provider_avatar_url)
-        .bind(identity.last_login_at)
-        .fetch_one(conn)
-        .await
-        .context("failed to insert user auth identity")?;
+        let row = sqlx::query(CREATE_USER_AUTH_IDENTITY_SQL)
+            .bind(identity.user_id)
+            .bind(identity.provider.as_str())
+            .bind(identity.provider_user_id)
+            .bind(identity.provider_email)
+            .bind(identity.provider_email_verified)
+            .bind(identity.provider_display_name)
+            .bind(identity.provider_avatar_url)
+            .bind(identity.last_login_at)
+            .fetch_one(tx)
+            .await
+            .context("failed to insert user auth identity")?;
 
         Self::map_user_auth_identity(row)
     }
 
     async fn find_by_provider_user_id(
         &self,
-        conn: &mut PgConnection,
         provider: AuthProvider,
         provider_user_id: &str,
     ) -> Result<Option<UserAuthIdentity>> {
-        let row = sqlx::query(
-            r#"
-            select
-                id,
-                user_id,
-                provider,
-                provider_user_id,
-                provider_email,
-                provider_email_verified,
-                provider_display_name,
-                provider_avatar_url,
-                last_login_at,
-                created_at,
-                updated_at
-            from user_auth_identities
-            where provider = $1 and provider_user_id = $2
-            "#,
-        )
-        .bind(provider.as_str())
-        .bind(provider_user_id)
-        .fetch_optional(conn)
-        .await
-        .context("failed to query user auth identity by provider user id")?;
+        let row = sqlx::query(FIND_USER_AUTH_IDENTITY_BY_PROVIDER_USER_ID_SQL)
+            .bind(provider.as_str())
+            .bind(provider_user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to query user auth identity by provider user id")?;
+
+        row.map(Self::map_user_auth_identity).transpose()
+    }
+
+    async fn find_by_provider_user_id_tx(
+        &self,
+        tx: &mut PgConnection,
+        provider: AuthProvider,
+        provider_user_id: &str,
+    ) -> Result<Option<UserAuthIdentity>> {
+        let row = sqlx::query(FIND_USER_AUTH_IDENTITY_BY_PROVIDER_USER_ID_SQL)
+            .bind(provider.as_str())
+            .bind(provider_user_id)
+            .fetch_optional(tx)
+            .await
+            .context("failed to query user auth identity by provider user id")?;
 
         row.map(Self::map_user_auth_identity).transpose()
     }
 
     async fn update_snapshot(
         &self,
-        conn: &mut PgConnection,
         id: i64,
         snapshot: UpdateUserAuthIdentitySnapshot,
     ) -> Result<UserAuthIdentity> {
-        let row = sqlx::query(
-            r#"
-            update user_auth_identities
-            set
-                provider_email = $2,
-                provider_email_verified = $3,
-                provider_display_name = $4,
-                provider_avatar_url = $5,
-                last_login_at = $6,
-                updated_at = now()
-            where id = $1
-            returning
-                id,
-                user_id,
-                provider,
-                provider_user_id,
-                provider_email,
-                provider_email_verified,
-                provider_display_name,
-                provider_avatar_url,
-                last_login_at,
-                created_at,
-                updated_at
-            "#,
-        )
-        .bind(id)
-        .bind(snapshot.provider_email)
-        .bind(snapshot.provider_email_verified)
-        .bind(snapshot.provider_display_name)
-        .bind(snapshot.provider_avatar_url)
-        .bind(snapshot.last_login_at)
-        .fetch_one(conn)
-        .await
-        .context("failed to update user auth identity snapshot")?;
+        let row = sqlx::query(UPDATE_USER_AUTH_IDENTITY_SNAPSHOT_SQL)
+            .bind(id)
+            .bind(snapshot.provider_email)
+            .bind(snapshot.provider_email_verified)
+            .bind(snapshot.provider_display_name)
+            .bind(snapshot.provider_avatar_url)
+            .bind(snapshot.last_login_at)
+            .fetch_one(&self.pool)
+            .await
+            .context("failed to update user auth identity snapshot")?;
+
+        Self::map_user_auth_identity(row)
+    }
+
+    async fn update_snapshot_tx(
+        &self,
+        tx: &mut PgConnection,
+        id: i64,
+        snapshot: UpdateUserAuthIdentitySnapshot,
+    ) -> Result<UserAuthIdentity> {
+        let row = sqlx::query(UPDATE_USER_AUTH_IDENTITY_SNAPSHOT_SQL)
+            .bind(id)
+            .bind(snapshot.provider_email)
+            .bind(snapshot.provider_email_verified)
+            .bind(snapshot.provider_display_name)
+            .bind(snapshot.provider_avatar_url)
+            .bind(snapshot.last_login_at)
+            .fetch_one(tx)
+            .await
+            .context("failed to update user auth identity snapshot")?;
 
         Self::map_user_auth_identity(row)
     }

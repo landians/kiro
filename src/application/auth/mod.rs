@@ -4,17 +4,10 @@ use anyhow::Result;
 use sqlx::PgPool;
 
 use self::google_login::{GoogleLogin, GoogleLoginLogic};
-use crate::{
-    domain::{
-        entity::user::User,
-        repository::{
-            user_auth_identity_repository::UserAuthIdentityRepository,
-            user_repository::UserRepository,
-        },
-    },
-    infrastructure::persistence::{
-        user_auth_identity_repository::UserAuthIdentityRepository as PgUserAuthIdentityRepository,
-        user_repository::UserRepository as PgUserRepository,
+use crate::domain::{
+    entity::user::User,
+    repository::{
+        user_auth_identity_repository::UserAuthIdentityRepository, user_repository::UserRepository,
     },
 };
 
@@ -41,5 +34,3 @@ where
         self.google_login_logic.execute(login).await
     }
 }
-
-pub type AppAuthLogic = AuthLogic<PgUserRepository, PgUserAuthIdentityRepository>;
