@@ -9,7 +9,7 @@ anyhow = "1.0.102"
 thiserror = "2.0.16"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-tracing = "0.1.44"
+tracing = { version = "0.1.44", features = ["attributes"] }
 tracing-subscriber = { version = "0.3.22", features = [
     "fmt",
     "json",
@@ -27,6 +27,7 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mig
 redis = { version = "1.0.5", features = ["aio", "tokio-comp"] }
 tower = { version = "0.5.2", features = ["timeout", "util"] }
 uuid = { version = "1.18.1", features = ["v4"] }
+ulid = "1.2.1"
 jsonwebtoken = "9.3.0"
 sha2 = "0.10.9"
 hex = "0.4.3"
@@ -35,3 +36,8 @@ reqwest = { version = "0.12.24", default-features = false, features = ["json", "
 urlencoding = "2.1.3"
 toml = "1.0.7"
 chrono = "0.4.44"
+tonic = "0.14.5"
+opentelemetry = "0.31.0"
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "http-proto", "trace", "metrics"] }
+tracing-opentelemetry = "0.32.0"

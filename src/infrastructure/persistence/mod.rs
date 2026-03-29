@@ -12,6 +12,11 @@ pub struct PostgresBuilder {
     pub host: String,
     pub port: u16,
     pub database: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub acquire_timeout_seconds: u64,
+    pub idle_timeout_seconds: u64,
+    pub max_lifetime_seconds: u64,
 }
 
 impl PostgresBuilder {
@@ -22,6 +27,11 @@ impl PostgresBuilder {
             host: c.host,
             port: c.port,
             database: c.database,
+            max_connections: c.max_connections.unwrap_or(20),
+            min_connections: c.min_connections.unwrap_or(5),
+            acquire_timeout_seconds: c.acquire_timeout_seconds.unwrap_or(5),
+            idle_timeout_seconds: c.idle_timeout_seconds.unwrap_or(600),
+            max_lifetime_seconds: c.max_lifetime_seconds.unwrap_or(1800),
         }
     }
 
@@ -32,7 +42,15 @@ impl PostgresBuilder {
         );
 
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(self.max_connections)
+            .min_connections(self.min_connections)
+            .acquire_timeout(std::time::Duration::from_secs(self.acquire_timeout_seconds))
+            .idle_timeout(Some(std::time::Duration::from_secs(
+                self.idle_timeout_seconds,
+            )))
+            .max_lifetime(Some(std::time::Duration::from_secs(
+                self.max_lifetime_seconds,
+            )))
             .connect(&dsn)
             .await?;
 

@@ -55,6 +55,7 @@ impl GoogleAuthServiceBuilder {
 }
 
 impl GoogleAuthService {
+    #[tracing::instrument(skip(self, state), fields(auth.provider = "google"))]
     pub fn build_authorization_url(&self, state: &str) -> String {
         let encoded_client_id = encode(&self.client_id);
         let encoded_redirect_uri = encode(&self.redirect_uri);
@@ -70,11 +71,13 @@ impl GoogleAuthService {
         &self.redirect_uri
     }
 
+    #[tracing::instrument(skip(self, code), fields(auth.provider = "google"))]
     pub async fn login_with_code(&self, code: &str) -> Result<GoogleUserProfile, AuthError> {
         let access_token = self.exchange_code_for_access_token(code).await?;
         self.fetch_user_info(&access_token).await
     }
 
+    #[tracing::instrument(skip(self, code), fields(auth.provider = "google"))]
     async fn exchange_code_for_access_token(&self, code: &str) -> Result<String, AuthError> {
         let response = self
             .http_client
@@ -106,6 +109,7 @@ impl GoogleAuthService {
         Ok(payload.access_token)
     }
 
+    #[tracing::instrument(skip(self, access_token), fields(auth.provider = "google"))]
     async fn fetch_user_info(&self, access_token: &str) -> Result<GoogleUserProfile, AuthError> {
         let response = self
             .http_client

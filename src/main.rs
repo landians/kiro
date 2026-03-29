@@ -7,6 +7,7 @@ use crate::{
         cache::CacheBuilder,
         config,
         persistence::PostgresBuilder,
+        telemetry::TelemetryBuilder,
     },
     interfaces::{SharedState, controller::build_routes},
 };
@@ -23,6 +24,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[tokio::main]
 async fn main() {
     let c = config::load_config("config.toml").expect("Failed to load configuration");
+    let telemetry = TelemetryBuilder::new(c.telemetry.clone())
+        .with_environment(c.http.env.clone())
+        .build()
+        .expect("Failed to install telemetry");
 
     let auth_service = AuthServiceBuilder::new(c.jwt.clone())
         .build()
@@ -43,7 +48,12 @@ async fn main() {
 
     let auth_logic = build_auth_logic(pg_pool.clone());
 
-    let shared_state = SharedState::new(auth_service, google_auth_service, auth_logic);
+    let shared_state = SharedState::new(
+        auth_service,
+        google_auth_service,
+        telemetry.http_observability.clone(),
+        auth_logic,
+    );
     let app = build_routes(shared_state);
 
     let addr = format!("{}:{}", c.http.host, c.http.port);
@@ -51,17 +61,20 @@ async fn main() {
         .await
         .expect("Failed to bind listener");
 
-    println!(
-        "[{}] {} listening on {}",
-        c.http.env,
+    tracing::info!(
+        service_env = %c.http.env,
+        service_name = %c.http.name,
+        listen_addr = %listener.local_addr().unwrap(),
+        "{} listening",
         c.http.name,
-        listener.local_addr().unwrap()
     );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .expect("Http server terminated with error")
+        .expect("Http server terminated with error");
+
+    telemetry.guard.shutdown();
 }
 
 async fn shutdown_signal() {
@@ -84,7 +97,7 @@ async fn shutdown_signal() {
 
     tokio::select! {
         _ = ctrl_c => {
-            println!("http service exit with graceful shutdown.")
+            tracing::info!("http service exit with graceful shutdown.")
         },
         _ = terminate => {},
     }

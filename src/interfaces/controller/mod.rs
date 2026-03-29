@@ -3,10 +3,10 @@ mod health;
 mod product;
 mod user;
 
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::get};
 use serde::Serialize;
 
-use super::SharedState;
+use super::{SharedState, middleware};
 
 pub fn build_routes(shared_state: SharedState) -> Router {
     Router::new()
@@ -15,6 +15,10 @@ pub fn build_routes(shared_state: SharedState) -> Router {
         .nest("/health", health::routes())
         .nest("/products", product::routes())
         .nest("/users", user::routes())
+        .layer(from_fn_with_state(
+            shared_state.clone(),
+            middleware::log_request_response,
+        ))
         .with_state(shared_state)
 }
 

@@ -10,15 +10,27 @@ password = "accelerator"
 host = "127.0.0.1"
 port = 5432
 database = "kiro"
+# max_connections = 20
+# min_connections = 5
+# acquire_timeout_seconds = 5
+# idle_timeout_seconds = 600
+# max_lifetime_seconds = 1800
 
 [redis]
 host = "127.0.0.1"
 port = 6379
 
 [telemetry]
-name = "kiro-api"
+enabled = false
+service_name = "kiro-api"
+service_namespace = "kiro"
+service_version = "0.1.0"
+tracer_name = "kiro-api"
 endpoint = "http://127.0.0.1:4317"
+protocol = "grpc"
 level = "info"
+export_interval_seconds = 30
+# authorization = "Bearer <token>"
 
 [jwt]
 issuer = "kiro-api"

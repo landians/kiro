@@ -47,6 +47,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip(self, login), fields(auth.provider = "google"))]
     pub async fn execute(&self, login: GoogleLogin) -> Result<User> {
         let mut tx = self
             .pool

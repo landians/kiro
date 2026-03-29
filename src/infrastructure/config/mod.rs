@@ -17,6 +17,11 @@ pub struct PgConfig {
     pub host: String,
     pub port: u16,
     pub database: String,
+    pub max_connections: Option<u32>,
+    pub min_connections: Option<u32>,
+    pub acquire_timeout_seconds: Option<u64>,
+    pub idle_timeout_seconds: Option<u64>,
+    pub max_lifetime_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,15 +31,31 @@ pub struct RedisConfig {
     pub port: u16,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub struct TelemetryConfig {
-    pub name: String,
-    pub endpoint: String,
-    pub level: String,
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TelemetryProtocol {
+    #[default]
+    Grpc,
+    Http,
 }
 
-#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelemetryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    pub service_name: String,
+    pub service_namespace: Option<String>,
+    pub service_version: Option<String>,
+    pub tracer_name: String,
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub protocol: TelemetryProtocol,
+    pub level: String,
+    pub export_interval_seconds: u64,
+    #[serde(default)]
+    pub authorization: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwtConfig {
     pub issuer: String,
@@ -54,11 +75,8 @@ pub struct AppConfig {
     pub http: HttpConfig,
     pub postgres: PgConfig,
     pub redis: RedisConfig,
-    #[allow(dead_code)]
     pub telemetry: TelemetryConfig,
-    #[allow(dead_code)]
     pub jwt: JwtConfig,
-    #[allow(dead_code)]
     pub google: GoogleConfig,
 }
 
