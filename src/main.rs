@@ -1,7 +1,7 @@
 use tokio::signal;
 
 use crate::{
-    bootstrap::auth::build_auth_logic,
+    bootstrap::{auth::build_auth_logic, user::build_user_logic},
     infrastructure::{
         auth::{AuthServiceBuilder, GoogleAuthServiceBuilder},
         cache::CacheBuilder,
@@ -29,9 +29,6 @@ async fn main() {
         .build()
         .expect("Failed to install telemetry");
 
-    let auth_service = AuthServiceBuilder::new(c.jwt.clone())
-        .build()
-        .expect("Failed to build auth service");
     let google_auth_service = GoogleAuthServiceBuilder::new(c.google.clone())
         .build()
         .expect("Failed to build google auth service");
@@ -41,18 +38,25 @@ async fn main() {
         .await
         .expect("Failed to connect postgres");
 
-    let _redis_conn = CacheBuilder::new(c.redis)
+    let redis_conn = CacheBuilder::new(c.redis)
         .build()
         .await
         .expect("Failed to connect redis");
 
+    let auth_service = AuthServiceBuilder::new(c.jwt.clone())
+        .with_revoked_token_store(redis_conn.clone())
+        .build()
+        .expect("Failed to build auth service");
+
     let auth_logic = build_auth_logic(pg_pool.clone());
+    let user_logic = build_user_logic(pg_pool.clone());
 
     let shared_state = SharedState::new(
         auth_service,
         google_auth_service,
         telemetry.http_observability.clone(),
         auth_logic,
+        user_logic,
     );
     let app = build_routes(shared_state);
 

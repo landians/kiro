@@ -16,3 +16,10 @@ pub struct GoogleLoginResponse {
     pub expires_in: i64,
     pub refresh_expires_in: i64,
 }
+
+#[derive(Debug, Serialize)]
+pub struct RefreshAccessTokenResponse {
+    pub access_token: String,
+    pub token_type: &'static str,
+    pub expires_in: i64,
+}

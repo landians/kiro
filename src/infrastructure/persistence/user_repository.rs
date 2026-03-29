@@ -133,6 +133,7 @@ impl UserRepository {
 }
 
 impl UserRepositoryTrait for UserRepository {
+    #[tracing::instrument(skip(self, user))]
     async fn create(&self, user: CreateUser) -> Result<User> {
         let row = sqlx::query(CREATE_USER_SQL)
             .bind(user.primary_email)
@@ -147,6 +148,7 @@ impl UserRepositoryTrait for UserRepository {
         Self::map_user(row)
     }
 
+    #[tracing::instrument(skip(self, tx, user))]
     async fn create_tx(&self, tx: &mut PgConnection, user: CreateUser) -> Result<User> {
         let row = sqlx::query(CREATE_USER_SQL)
             .bind(user.primary_email)
@@ -161,6 +163,7 @@ impl UserRepositoryTrait for UserRepository {
         Self::map_user(row)
     }
 
+    #[tracing::instrument(skip(self), fields(user_id = id))]
     async fn find_by_id(&self, id: i64) -> Result<Option<User>> {
         let row = sqlx::query(FIND_USER_BY_ID_SQL)
             .bind(id)
@@ -171,6 +174,7 @@ impl UserRepositoryTrait for UserRepository {
         row.map(Self::map_user).transpose()
     }
 
+    #[tracing::instrument(skip(self, tx), fields(user_id = id))]
     async fn find_by_id_tx(&self, tx: &mut PgConnection, id: i64) -> Result<Option<User>> {
         let row = sqlx::query(FIND_USER_BY_ID_SQL)
             .bind(id)
@@ -181,6 +185,7 @@ impl UserRepositoryTrait for UserRepository {
         row.map(Self::map_user).transpose()
     }
 
+    #[tracing::instrument(skip(self, profile), fields(user_id = id))]
     async fn update_profile(&self, id: i64, profile: UpdateUserProfile) -> Result<User> {
         let row = sqlx::query(UPDATE_USER_PROFILE_SQL)
             .bind(id)
@@ -196,6 +201,7 @@ impl UserRepositoryTrait for UserRepository {
         Self::map_user(row)
     }
 
+    #[tracing::instrument(skip(self, tx, profile), fields(user_id = id))]
     async fn update_profile_tx(
         &self,
         tx: &mut PgConnection,

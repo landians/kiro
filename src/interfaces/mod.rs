@@ -6,7 +6,7 @@ pub mod middleware;
 use std::sync::Arc;
 
 use crate::{
-    application::auth::AuthLogic,
+    application::{auth::AuthLogic, user::UserLogic},
     infrastructure::{
         auth::{AuthService, GoogleAuthService},
         observability::HttpObservability,
@@ -27,6 +27,7 @@ struct SharedStateInner {
     google_auth_service: GoogleAuthService,
     http_observability: HttpObservability,
     auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+    user_logic: UserLogic<UserRepository>,
 }
 
 impl SharedState {
@@ -35,6 +36,7 @@ impl SharedState {
         google_auth_service: GoogleAuthService,
         http_observability: HttpObservability,
         auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+        user_logic: UserLogic<UserRepository>,
     ) -> Self {
         Self {
             inner: Arc::new(SharedStateInner {
@@ -42,6 +44,7 @@ impl SharedState {
                 google_auth_service,
                 http_observability,
                 auth_logic,
+                user_logic,
             }),
         }
     }
@@ -60,5 +63,9 @@ impl SharedState {
 
     pub fn auth_logic(&self) -> &AuthLogic<UserRepository, UserAuthIdentityRepository> {
         &self.inner.auth_logic
+    }
+
+    pub fn user_logic(&self) -> &UserLogic<UserRepository> {
+        &self.inner.user_logic
     }
 }

@@ -4,6 +4,7 @@ mod jwt;
 pub use google::{GoogleAuthService, GoogleAuthServiceBuilder, GoogleUserProfile};
 pub use jwt::{
     ACCESS_TOKEN_EXPIRES_IN_SECS, AuthService, AuthServiceBuilder, REFRESH_TOKEN_EXPIRES_IN_SECS,
+    TokenClaims, TokenPair,
 };
 
 use jsonwebtoken::errors::Error as JwtError;
@@ -15,6 +16,8 @@ pub enum AuthError {
     Jwt(#[from] JwtError),
     #[error("jwt config field `{field}` cannot be empty")]
     EmptySecret { field: &'static str },
+    #[error("auth revoked token store is required")]
+    MissingRevokedTokenStore,
     #[error("google client_id cannot be empty")]
     EmptyGoogleClientId,
     #[error("google client_secret cannot be empty")]
@@ -27,6 +30,8 @@ pub enum AuthError {
         expected: &'static str,
         actual: String,
     },
+    #[error("token has been revoked")]
+    RevokedToken,
     #[error("invalid google authorization code")]
     InvalidGoogleAuthorizationCode,
     #[error("invalid google access token")]
@@ -37,4 +42,6 @@ pub enum AuthError {
     GoogleUpstream(#[from] reqwest::Error),
     #[error("google upstream responded with unexpected status {status}")]
     GoogleUpstreamStatus { status: u16 },
+    #[error("redis error: {0}")]
+    Redis(#[from] redis::RedisError),
 }

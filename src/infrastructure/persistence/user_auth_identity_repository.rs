@@ -130,6 +130,10 @@ impl UserAuthIdentityRepository {
 }
 
 impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
+    #[tracing::instrument(
+        skip(self, identity),
+        fields(user_id = identity.user_id, auth.provider = %identity.provider.as_str())
+    )]
     async fn create(&self, identity: CreateUserAuthIdentity) -> Result<UserAuthIdentity> {
         let row = sqlx::query(CREATE_USER_AUTH_IDENTITY_SQL)
             .bind(identity.user_id)
@@ -147,14 +151,19 @@ impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
         Self::map_user_auth_identity(row)
     }
 
+    #[tracing::instrument(
+        skip(self, tx, identity),
+        fields(user_id = identity.user_id, auth.provider = %identity.provider.as_str())
+    )]
     async fn create_tx(
         &self,
         tx: &mut PgConnection,
         identity: CreateUserAuthIdentity,
     ) -> Result<UserAuthIdentity> {
+        let provider = identity.provider.as_str();
         let row = sqlx::query(CREATE_USER_AUTH_IDENTITY_SQL)
             .bind(identity.user_id)
-            .bind(identity.provider.as_str())
+            .bind(provider)
             .bind(identity.provider_user_id)
             .bind(identity.provider_email)
             .bind(identity.provider_email_verified)
@@ -168,6 +177,10 @@ impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
         Self::map_user_auth_identity(row)
     }
 
+    #[tracing::instrument(
+        skip(self, provider_user_id),
+        fields(auth.provider = %provider.as_str())
+    )]
     async fn find_by_provider_user_id(
         &self,
         provider: AuthProvider,
@@ -183,6 +196,10 @@ impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
         row.map(Self::map_user_auth_identity).transpose()
     }
 
+    #[tracing::instrument(
+        skip(self, tx, provider_user_id),
+        fields(auth.provider = %provider.as_str())
+    )]
     async fn find_by_provider_user_id_tx(
         &self,
         tx: &mut PgConnection,
@@ -199,6 +216,7 @@ impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
         row.map(Self::map_user_auth_identity).transpose()
     }
 
+    #[tracing::instrument(skip(self, snapshot), fields(identity_id = id))]
     async fn update_snapshot(
         &self,
         id: i64,
@@ -218,6 +236,7 @@ impl UserAuthIdentityRepositoryTrait for UserAuthIdentityRepository {
         Self::map_user_auth_identity(row)
     }
 
+    #[tracing::instrument(skip(self, tx, snapshot), fields(identity_id = id))]
     async fn update_snapshot_tx(
         &self,
         tx: &mut PgConnection,

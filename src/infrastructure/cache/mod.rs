@@ -18,6 +18,10 @@ impl CacheBuilder {
         }
     }
 
+    #[tracing::instrument(
+        skip(self),
+        fields(cache.system = "redis", cache.host = %self.host, cache.port = self.port)
+    )]
     pub async fn build(self) -> Result<MultiplexedConnection> {
         let dsn = if let Some(pwd) = self.password {
             format!("redis://:{}@{}:{}", pwd, self.host, self.port)

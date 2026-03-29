@@ -30,6 +30,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip(self, login), fields(auth.provider = "google"))]
     pub async fn google_login(&self, login: GoogleLogin) -> Result<User> {
         self.google_login_logic.execute(login).await
     }

@@ -3,17 +3,21 @@ use std::time::Instant;
 use axum::{
     body::{Body, Bytes, to_bytes},
     extract::{MatchedPath, Request, State},
-    http::{HeaderName, HeaderValue},
+    http::{HeaderMap, HeaderName, HeaderValue, header},
     middleware::Next,
     response::Response,
 };
-use tracing::{Instrument, field::Empty, info, info_span};
+use tracing::{Instrument, Span, field::Empty, info, info_span};
 use ulid::Ulid;
 
-use crate::interfaces::SharedState;
+use crate::{
+    infrastructure::auth::{AuthError, TokenClaims},
+    interfaces::{SharedState, error::AppError},
+};
 
 const LOG_BODY_LIMIT_BYTES: usize = 64 * 1024;
 const TRACE_ID_HEADER_NAME: HeaderName = HeaderName::from_static("x-trace-id");
+const BEARER_PREFIX: &str = "Bearer ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceId(String);
@@ -26,6 +30,13 @@ impl TraceId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct AuthenticatedUser {
+    pub user_id: i64,
+    pub token_claims: TokenClaims,
 }
 
 pub async fn log_request_response(
@@ -50,6 +61,7 @@ pub async fn log_request_response(
         http.method = %method,
         http.route = %route,
         http.target = %uri,
+        enduser.id = Empty,
         http.status_code = Empty,
         http.request.body.size = Empty,
         http.response.body.size = Empty,
@@ -92,6 +104,31 @@ pub async fn log_request_response(
     attach_trace_id_header(response, &trace_id)
 }
 
+pub async fn validate_user_token(
+    State(state): State<SharedState>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let token = extract_bearer_token(request.headers())?;
+    let token_claims = state
+        .auth_service()
+        .validate_active_access_token(token)
+        .await
+        .map_err(map_access_token_error)?;
+    let user_id = token_claims
+        .sub
+        .parse::<i64>()
+        .map_err(|_| AppError::unauthorized("invalid_token_subject", "invalid token subject"))?;
+
+    Span::current().record("enduser.id", user_id);
+    request.extensions_mut().insert(AuthenticatedUser {
+        user_id,
+        token_claims,
+    });
+
+    Ok(next.run(request).await)
+}
+
 async fn buffer_request(request: Request) -> (Request, Bytes) {
     let (parts, body) = request.into_parts();
     let body_bytes = read_body(body).await;
@@ -132,4 +169,47 @@ fn attach_trace_id_header(mut response: Response, trace_id: &TraceId) -> Respons
 
     response.headers_mut().insert(TRACE_ID_HEADER_NAME, value);
     response
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .ok_or_else(|| {
+            AppError::unauthorized(
+                "missing_authorization_header",
+                "authorization header is required",
+            )
+        })?
+        .to_str()
+        .map_err(|_| {
+            AppError::unauthorized(
+                "invalid_authorization_header",
+                "authorization header must be valid ASCII",
+            )
+        })?;
+
+    let token = authorization.strip_prefix(BEARER_PREFIX).ok_or_else(|| {
+        AppError::unauthorized(
+            "invalid_authorization_scheme",
+            "authorization header must use Bearer scheme",
+        )
+    })?;
+
+    if token.trim().is_empty() {
+        return Err(AppError::unauthorized(
+            "invalid_access_token",
+            "access token cannot be empty",
+        ));
+    }
+
+    Ok(token)
+}
+
+fn map_access_token_error(error: AuthError) -> AppError {
+    match error {
+        AuthError::Jwt(_) | AuthError::InvalidTokenType { .. } | AuthError::RevokedToken => {
+            AppError::unauthorized("invalid_access_token", "invalid access token")
+        }
+        other => AppError::internal_server_error("auth_service_error", other.to_string()),
+    }
 }

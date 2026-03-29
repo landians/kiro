@@ -35,6 +35,17 @@ impl PostgresBuilder {
         }
     }
 
+    #[tracing::instrument(
+        skip(self),
+        fields(
+            db.system = "postgresql",
+            db.host = %self.host,
+            db.port = self.port,
+            db.name = %self.database,
+            db.pool.max_connections = self.max_connections,
+            db.pool.min_connections = self.min_connections
+        )
+    )]
     pub async fn build(self) -> Result<PgPool> {
         let dsn = format!(
             "postgres://{}:{}@{}:{}/{}",

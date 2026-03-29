@@ -37,6 +37,14 @@ impl AppError {
         }
     }
 
+    pub fn not_found(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code,
+            message: message.into(),
+        }
+    }
+
     pub fn bad_gateway(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_GATEWAY,
