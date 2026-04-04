@@ -1,20 +1,25 @@
 use axum::{
     Json, Router,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, State, rejection::JsonRejection},
     http::StatusCode,
     routing::{get, post},
 };
 
 use crate::{
-    application::user::UserLogicError,
+    application::user::{UpdateUser, UserLogicError},
     infrastructure::auth::AuthError,
-    interfaces::{SharedState, dto::user::UserDto, error::AppError, middleware::AuthenticatedUser},
+    interfaces::{
+        SharedState,
+        dto::user::{UpdateUserRequest, UserDto},
+        error::AppError,
+        middleware::AuthenticatedUser,
+    },
 };
 
 pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/logout", post(logout))
-        .route("/{user_id}", get(get_user))
+        .route("/{user_id}", get(get_user).patch(update_user))
 }
 
 async fn get_user(
@@ -46,10 +51,40 @@ async fn logout(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn update_user(
+    State(state): State<SharedState>,
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    Path(user_id): Path<String>,
+    request: Result<Json<UpdateUserRequest>, JsonRejection>,
+) -> Result<Json<UserDto>, AppError> {
+    let user_id = parse_user_id(&user_id)?;
+    let Json(request) = request
+        .map_err(|rejection| AppError::bad_request("invalid_request", rejection.body_text()))?;
+    let user = state
+        .user_logic()
+        .update(
+            authenticated_user.user_id,
+            user_id,
+            build_update_user(request),
+        )
+        .await
+        .map_err(UserAppError::from)
+        .map_err(AppError::from)?;
+
+    Ok(Json(UserDto::from(user)))
+}
+
 fn parse_user_id(user_id: &str) -> Result<i64, AppError> {
     user_id
         .parse::<i64>()
         .map_err(|_| AppError::bad_request("invalid_user_id", "user_id must be a valid integer"))
+}
+
+fn build_update_user(request: UpdateUserRequest) -> UpdateUser {
+    UpdateUser {
+        display_name: request.display_name,
+        avatar_url: request.avatar_url,
+    }
 }
 
 struct UserAppError(anyhow::Error);
@@ -74,6 +109,17 @@ impl From<UserAppError> for AppError {
                 UserLogicError::UserNotFound { user_id } => {
                     AppError::not_found("user_not_found", format!("user {user_id} not found"))
                 }
+                UserLogicError::EmptyUserUpdate => AppError::bad_request(
+                    "empty_user_update",
+                    "at least one updatable field is required",
+                ),
+                UserLogicError::UserUpdateForbidden {
+                    actor_user_id,
+                    user_id,
+                } => AppError::forbidden(
+                    "user_update_forbidden",
+                    format!("user {actor_user_id} cannot update user {user_id}"),
+                ),
             };
         }
 

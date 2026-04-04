@@ -169,7 +169,7 @@ where
             email_verified: login.email_verified,
             display_name: login.display_name.clone(),
             avatar_url: login.avatar_url.clone(),
-            last_login_at: login.login_at,
+            last_login_at: Some(login.login_at),
         }
     }
 

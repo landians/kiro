@@ -1,6 +1,12 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::domain::entity::user::User;
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
 
 #[derive(Debug, Serialize)]
 pub struct UserDto {

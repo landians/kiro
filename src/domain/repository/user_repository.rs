@@ -21,7 +21,7 @@ pub struct UpdateUserProfile {
     pub email_verified: bool,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
-    pub last_login_at: DateTime<Utc>,
+    pub last_login_at: Option<DateTime<Utc>>,
 }
 
 pub trait UserRepository: Send + Sync {
