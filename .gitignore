@@ -1,9 +1,13 @@
 /target
 
+kiro-api/target
+kiro-admin/target
+
 .idea
 
 .DS_Store
 
 AGENTS.md
 
-config.toml
+kiro-api/config.toml
+kiro-admin/config.toml

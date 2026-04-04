@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tokio::signal;
 
 use crate::{
@@ -23,7 +25,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() {
-    let c = config::load_config("config.toml").expect("Failed to load configuration");
+    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.toml");
+    let c = config::load_config(config_path.to_string_lossy().as_ref())
+        .expect("Failed to load configuration");
+
     let telemetry = TelemetryBuilder::new(c.telemetry.clone())
         .with_environment(c.http.env.clone())
         .build()

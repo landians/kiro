@@ -1,0 +1,33 @@
+[http]
+name = "kiro-admin"
+host = "0.0.0.0"
+port = 8081
+env = "local"
+
+[postgres]
+username = "postgres"
+password = "postgres"
+host = "127.0.0.1"
+port = 5432
+database = "kiro"
+max_connections = 20
+min_connections = 5
+acquire_timeout_seconds = 5
+idle_timeout_seconds = 600
+max_lifetime_seconds = 1800
+
+[telemetry]
+enabled = false
+service_name = "kiro-admin"
+service_namespace = "kiro"
+service_version = "0.1.0"
+tracer_name = "kiro-admin"
+endpoint = "http://127.0.0.1:4317"
+protocol = "grpc"
+level = "info"
+export_interval_seconds = 30
+# authorization = "Bearer <token>"
+
+[jwt]
+issuer = "kiro-admin"
+access_secret = "change-me-to-a-long-random-secret"

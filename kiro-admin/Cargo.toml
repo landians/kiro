@@ -1,0 +1,26 @@
+[package]
+name = "kiro-admin"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mimalloc.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+argon2.workspace = true
+serde.workspace = true
+jsonwebtoken.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+tokio.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+toml.workspace = true
+chrono.workspace = true
+tonic.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+ulid.workspace = true
+uuid.workspace = true
