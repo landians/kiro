@@ -15,9 +15,8 @@ pub fn routes() -> Router<SharedState> {
 
 async fn get_admin_user(
     State(state): State<SharedState>,
-    Path(admin_user_id): Path<String>,
+    Path(admin_user_id): Path<i64>,
 ) -> Result<Json<AdminUserDto>, AppError> {
-    let admin_user_id = parse_admin_user_id(&admin_user_id)?;
     let admin_user = state
         .admin_user_logic()
         .get(admin_user_id)
@@ -26,15 +25,6 @@ async fn get_admin_user(
         .map_err(AppError::from)?;
 
     Ok(Json(AdminUserDto::from(admin_user)))
-}
-
-fn parse_admin_user_id(admin_user_id: &str) -> Result<i64, AppError> {
-    admin_user_id.parse::<i64>().map_err(|_| {
-        AppError::bad_request(
-            "invalid_admin_user_id",
-            "admin_user_id must be a valid integer",
-        )
-    })
 }
 
 struct AdminUserAppError(anyhow::Error);

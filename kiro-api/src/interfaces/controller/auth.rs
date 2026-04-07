@@ -27,9 +27,9 @@ use crate::{
 pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/google/login", post(google_login))
-        .route("/refresh-token", post(refresh_access_token))
         .route("/google/test", get(google_test_page))
         .route("/google/callback", get(google_callback_page))
+        .route("/refresh-token", post(refresh_access_token))
 }
 
 async fn google_login(
@@ -62,25 +62,6 @@ async fn google_login(
     Ok(Json(build_google_login_response(user, token_pair)))
 }
 
-async fn refresh_access_token(
-    State(state): State<SharedState>,
-    headers: HeaderMap,
-) -> Result<Json<RefreshAccessTokenResponse>, AppError> {
-    let refresh_token = extract_bearer_token(&headers)?;
-    let access_token = state
-        .auth_service()
-        .refresh_access_token(refresh_token)
-        .await
-        .map_err(RefreshAccessTokenAppError::from)
-        .map_err(AppError::from)?;
-
-    Ok(Json(RefreshAccessTokenResponse {
-        access_token,
-        token_type: "Bearer",
-        expires_in: ACCESS_TOKEN_EXPIRES_IN_SECS,
-    }))
-}
-
 fn build_google_login_response(
     user: crate::domain::entity::user::User,
     token_pair: TokenPair,
@@ -104,6 +85,77 @@ fn build_google_login(user: GoogleUserProfile) -> GoogleLogin {
         avatar_url: user.picture,
         login_at: Utc::now(),
     }
+}
+
+async fn google_test_page(State(state): State<SharedState>) -> Html<String> {
+    let authorize_url = state
+        .google_auth_service()
+        .build_authorization_url("kiro-google-login-test");
+    let redirect_uri = state.google_auth_service().redirect_uri();
+
+    let template = include_str!("../pages/google_test.html");
+    let html = template
+        .replace("__GOOGLE_AUTHORIZE_URL__", &authorize_url)
+        .replace("__GOOGLE_REDIRECT_URI__", redirect_uri);
+
+    Html(html)
+}
+
+async fn google_callback_page() -> Html<&'static str> {
+    Html(include_str!("../pages/google_callback.html"))
+}
+
+async fn refresh_access_token(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> Result<Json<RefreshAccessTokenResponse>, AppError> {
+    let refresh_token = extract_bearer_token(&headers)?;
+    let access_token = state
+        .auth_service()
+        .refresh_access_token(refresh_token)
+        .await
+        .map_err(RefreshAccessTokenAppError::from)
+        .map_err(AppError::from)?;
+
+    Ok(Json(RefreshAccessTokenResponse {
+        access_token,
+        token_type: "Bearer",
+        expires_in: ACCESS_TOKEN_EXPIRES_IN_SECS,
+    }))
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .ok_or_else(|| {
+            AppError::unauthorized(
+                "missing_authorization_header",
+                "authorization header is required",
+            )
+        })?
+        .to_str()
+        .map_err(|_| {
+            AppError::unauthorized(
+                "invalid_authorization_header",
+                "authorization header must be valid ASCII",
+            )
+        })?;
+
+    let token = authorization.strip_prefix("Bearer ").ok_or_else(|| {
+        AppError::unauthorized(
+            "invalid_authorization_scheme",
+            "authorization header must use Bearer scheme",
+        )
+    })?;
+
+    if token.trim().is_empty() {
+        return Err(AppError::unauthorized(
+            "invalid_refresh_token",
+            "refresh token cannot be empty",
+        ));
+    }
+
+    Ok(token)
 }
 
 struct GoogleAuthAppError(AuthError);
@@ -200,56 +252,4 @@ impl From<RefreshAccessTokenAppError> for AppError {
             other => AppError::internal_server_error("auth_service_error", other.to_string()),
         }
     }
-}
-
-async fn google_test_page(State(state): State<SharedState>) -> Html<String> {
-    let authorize_url = state
-        .google_auth_service()
-        .build_authorization_url("kiro-google-login-test");
-    let redirect_uri = state.google_auth_service().redirect_uri();
-
-    let template = include_str!("../pages/google_test.html");
-    let html = template
-        .replace("__GOOGLE_AUTHORIZE_URL__", &authorize_url)
-        .replace("__GOOGLE_REDIRECT_URI__", redirect_uri);
-
-    Html(html)
-}
-
-async fn google_callback_page() -> Html<&'static str> {
-    Html(include_str!("../pages/google_callback.html"))
-}
-
-fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
-    let authorization = headers
-        .get(header::AUTHORIZATION)
-        .ok_or_else(|| {
-            AppError::unauthorized(
-                "missing_authorization_header",
-                "authorization header is required",
-            )
-        })?
-        .to_str()
-        .map_err(|_| {
-            AppError::unauthorized(
-                "invalid_authorization_header",
-                "authorization header must be valid ASCII",
-            )
-        })?;
-
-    let token = authorization.strip_prefix("Bearer ").ok_or_else(|| {
-        AppError::unauthorized(
-            "invalid_authorization_scheme",
-            "authorization header must use Bearer scheme",
-        )
-    })?;
-
-    if token.trim().is_empty() {
-        return Err(AppError::unauthorized(
-            "invalid_refresh_token",
-            "refresh token cannot be empty",
-        ));
-    }
-
-    Ok(token)
 }

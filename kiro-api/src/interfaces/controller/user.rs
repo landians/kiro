@@ -25,9 +25,8 @@ pub fn routes() -> Router<SharedState> {
 
 async fn get_user(
     State(state): State<SharedState>,
-    Path(user_id): Path<String>,
+    Path(user_id): Path<i64>,
 ) -> Result<Json<UserDto>, AppError> {
-    let user_id = parse_user_id(&user_id)?;
     let user = state
         .user_logic()
         .get(user_id)
@@ -55,10 +54,9 @@ async fn logout(
 async fn update_user(
     State(state): State<SharedState>,
     Extension(authenticated_user): Extension<AuthenticatedUser>,
-    Path(user_id): Path<String>,
+    Path(user_id): Path<i64>,
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<UserDto>, AppError> {
-    let user_id = parse_user_id(&user_id)?;
     request.validate()?;
     let user = state
         .user_logic()
@@ -72,12 +70,6 @@ async fn update_user(
         .map_err(AppError::from)?;
 
     Ok(Json(UserDto::from(user)))
-}
-
-fn parse_user_id(user_id: &str) -> Result<i64, AppError> {
-    user_id
-        .parse::<i64>()
-        .map_err(|_| AppError::bad_request("invalid_user_id", "user_id must be a valid integer"))
 }
 
 fn build_update_user(request: UpdateUserRequest) -> UpdateUser {
