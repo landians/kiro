@@ -1,4 +1,5 @@
 pub mod admin_user_repository;
+pub mod user_repository;
 
 use anyhow::Result;
 use sqlx::{PgPool, postgres::PgPoolOptions};

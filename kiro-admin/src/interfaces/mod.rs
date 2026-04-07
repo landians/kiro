@@ -6,11 +6,16 @@ pub mod middleware;
 use std::sync::Arc;
 
 use crate::{
-    application::{auth::AuthLogic, user::AdminUserLogic},
+    application::{
+        auth::AuthLogic,
+        user::{AdminUserLogic, UserLogic},
+    },
     infrastructure::{
         auth::{AuthService, password::PasswordService},
         observability::HttpObservability,
-        persistence::admin_user_repository::AdminUserRepository,
+        persistence::{
+            admin_user_repository::AdminUserRepository, user_repository::UserRepository,
+        },
     },
 };
 
@@ -24,6 +29,7 @@ struct SharedStateInner {
     http_observability: HttpObservability,
     auth_logic: AuthLogic<AdminUserRepository, PasswordService>,
     admin_user_logic: AdminUserLogic<AdminUserRepository>,
+    user_logic: UserLogic<UserRepository>,
 }
 
 impl SharedState {
@@ -32,6 +38,7 @@ impl SharedState {
         http_observability: HttpObservability,
         auth_logic: AuthLogic<AdminUserRepository, PasswordService>,
         admin_user_logic: AdminUserLogic<AdminUserRepository>,
+        user_logic: UserLogic<UserRepository>,
     ) -> Self {
         Self {
             inner: Arc::new(SharedStateInner {
@@ -39,6 +46,7 @@ impl SharedState {
                 http_observability,
                 auth_logic,
                 admin_user_logic,
+                user_logic,
             }),
         }
     }
@@ -57,5 +65,9 @@ impl SharedState {
 
     pub fn admin_user_logic(&self) -> &AdminUserLogic<AdminUserRepository> {
         &self.inner.admin_user_logic
+    }
+
+    pub fn user_logic(&self) -> &UserLogic<UserRepository> {
+        &self.inner.user_logic
     }
 }

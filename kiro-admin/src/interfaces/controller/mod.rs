@@ -1,6 +1,7 @@
 mod admin_user;
 mod auth;
 mod health;
+mod user;
 
 use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::get};
 use serde::Serialize;
@@ -10,6 +11,7 @@ use super::{SharedState, middleware};
 pub fn build_routes(shared_state: SharedState) -> Router {
     let protected_routes = Router::new()
         .nest("/admin-users", admin_user::routes())
+        .nest("/users", user::routes())
         .layer(from_fn_with_state(
             shared_state.clone(),
             middleware::validate_admin_token,
@@ -30,12 +32,12 @@ pub fn build_routes(shared_state: SharedState) -> Router {
 async fn index(State(_state): State<SharedState>) -> Json<IndexResponse> {
     Json(IndexResponse {
         service: "kiro-admin",
-        routes: ["/auth", "/health", "/admin-users"],
+        routes: ["/auth", "/health", "/admin-users", "/users"],
     })
 }
 
 #[derive(Serialize)]
 struct IndexResponse {
     service: &'static str,
-    routes: [&'static str; 3],
+    routes: [&'static str; 4],
 }

@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use tokio::signal;
 
 use crate::{
-    bootstrap::{auth::build_auth_logic, user::build_admin_user_logic},
+    bootstrap::{
+        auth::build_auth_logic,
+        user::{build_admin_user_logic, build_user_logic},
+    },
     infrastructure::{
         auth::AuthServiceBuilder, config, persistence::PostgresBuilder, telemetry::TelemetryBuilder,
     },
@@ -40,12 +43,14 @@ async fn main() {
 
     let auth_logic = build_auth_logic(pg_pool.clone());
     let admin_user_logic = build_admin_user_logic(pg_pool.clone());
+    let user_logic = build_user_logic(pg_pool.clone());
 
     let shared_state = SharedState::new(
         auth_service,
         telemetry.http_observability.clone(),
         auth_logic,
         admin_user_logic,
+        user_logic,
     );
     let app = build_routes(shared_state);
 
