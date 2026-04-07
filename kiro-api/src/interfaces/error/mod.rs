@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use validator::ValidationErrors;
 
 #[derive(Debug)]
 pub struct AppError {
@@ -59,6 +60,12 @@ impl AppError {
             code,
             message: message.into(),
         }
+    }
+}
+
+impl From<ValidationErrors> for AppError {
+    fn from(errors: ValidationErrors) -> Self {
+        AppError::bad_request("invalid_request", errors.to_string())
     }
 }
 

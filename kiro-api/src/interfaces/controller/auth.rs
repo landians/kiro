@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::{
     application::auth::google_login::{GoogleLogin, GoogleLoginError},
@@ -36,9 +36,7 @@ async fn google_login(
     State(state): State<SharedState>,
     Json(request): Json<GoogleLoginRequest>,
 ) -> Result<Json<GoogleLoginResponse>, AppError> {
-    request
-        .validate()
-        .map_err(validation_errors_to_app_error)?;
+    request.validate()?;
 
     let google_user = state
         .google_auth_service()
@@ -81,10 +79,6 @@ async fn refresh_access_token(
         token_type: "Bearer",
         expires_in: ACCESS_TOKEN_EXPIRES_IN_SECS,
     }))
-}
-
-fn validation_errors_to_app_error(errors: ValidationErrors) -> AppError {
-    AppError::bad_request("invalid_request", errors.to_string())
 }
 
 fn build_google_login_response(
