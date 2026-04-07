@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::domain::entity::user::User;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+#[validate(schema(function = "validate_update_user_request"))]
 pub struct UpdateUserRequest {
     pub display_name: Option<String>,
+    #[validate(url)]
     pub avatar_url: Option<String>,
 }
 
@@ -29,4 +32,16 @@ impl From<User> for UserDto {
             account_status: value.account_status.as_str(),
         }
     }
+}
+
+fn validate_update_user_request(
+    request: &UpdateUserRequest,
+) -> Result<(), validator::ValidationError> {
+    if request.display_name.is_none() && request.avatar_url.is_none() {
+        let mut error = validator::ValidationError::new("empty_user_update");
+        error.message = Some("at least one updatable field is required".into());
+        return Err(error);
+    }
+
+    Ok(())
 }

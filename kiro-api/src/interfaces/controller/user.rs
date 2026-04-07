@@ -1,9 +1,10 @@
 use axum::{
     Json, Router,
-    extract::{Extension, Path, State, rejection::JsonRejection},
+    extract::{Extension, Path, State},
     http::StatusCode,
     routing::{get, post},
 };
+use validator::{Validate, ValidationErrors};
 
 use crate::{
     application::user::{UpdateUser, UserLogicError},
@@ -55,11 +56,10 @@ async fn update_user(
     State(state): State<SharedState>,
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     Path(user_id): Path<String>,
-    request: Result<Json<UpdateUserRequest>, JsonRejection>,
+    Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<UserDto>, AppError> {
     let user_id = parse_user_id(&user_id)?;
-    let Json(request) = request
-        .map_err(|rejection| AppError::bad_request("invalid_request", rejection.body_text()))?;
+    request.validate().map_err(validation_errors_to_app_error)?;
     let user = state
         .user_logic()
         .update(
@@ -78,6 +78,10 @@ fn parse_user_id(user_id: &str) -> Result<i64, AppError> {
     user_id
         .parse::<i64>()
         .map_err(|_| AppError::bad_request("invalid_user_id", "user_id must be a valid integer"))
+}
+
+fn validation_errors_to_app_error(errors: ValidationErrors) -> AppError {
+    AppError::bad_request("invalid_request", errors.to_string())
 }
 
 fn build_update_user(request: UpdateUserRequest) -> UpdateUser {

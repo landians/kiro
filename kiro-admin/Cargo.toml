@@ -24,3 +24,4 @@ opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 ulid.workspace = true
 uuid.workspace = true
+validator.workspace = true

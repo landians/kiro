@@ -1,11 +1,12 @@
 use axum::{
     Json, Router,
-    extract::{State, rejection::JsonRejection},
+    extract::State,
     http::{HeaderMap, header},
     response::Html,
     routing::{get, post},
 };
 use chrono::Utc;
+use validator::{Validate, ValidationErrors};
 
 use crate::{
     application::auth::google_login::{GoogleLogin, GoogleLoginError},
@@ -33,17 +34,11 @@ pub fn routes() -> Router<SharedState> {
 
 async fn google_login(
     State(state): State<SharedState>,
-    request: Result<Json<GoogleLoginRequest>, JsonRejection>,
+    Json(request): Json<GoogleLoginRequest>,
 ) -> Result<Json<GoogleLoginResponse>, AppError> {
-    let Json(request) = request
-        .map_err(|rejection| AppError::bad_request("invalid_request", rejection.body_text()))?;
-
-    if request.code.trim().is_empty() {
-        return Err(AppError::bad_request(
-            "invalid_request",
-            "code cannot be empty",
-        ));
-    }
+    request
+        .validate()
+        .map_err(validation_errors_to_app_error)?;
 
     let google_user = state
         .google_auth_service()
@@ -86,6 +81,10 @@ async fn refresh_access_token(
         token_type: "Bearer",
         expires_in: ACCESS_TOKEN_EXPIRES_IN_SECS,
     }))
+}
+
+fn validation_errors_to_app_error(errors: ValidationErrors) -> AppError {
+    AppError::bad_request("invalid_request", errors.to_string())
 }
 
 fn build_google_login_response(

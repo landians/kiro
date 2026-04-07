@@ -35,3 +35,4 @@ opentelemetry = "0.31.0"
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "http-proto", "trace", "metrics"] }
 tracing-opentelemetry = "0.32.0"
+validator = { version = "0.20.0", features = ["derive"] }
