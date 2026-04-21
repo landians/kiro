@@ -6,11 +6,12 @@ pub mod middleware;
 use std::sync::Arc;
 
 use crate::{
-    application::{auth::AuthLogic, user::UserLogic},
+    application::{auth::AuthLogic, product::ProductLogic, user::UserLogic},
     infrastructure::{
         auth::{AuthService, GoogleAuthService},
         observability::HttpObservability,
         persistence::{
+            product_repository::ProductRepository,
             user_auth_identity_repository::UserAuthIdentityRepository,
             user_repository::UserRepository,
         },
@@ -27,6 +28,7 @@ struct SharedStateInner {
     google_auth_service: GoogleAuthService,
     http_observability: HttpObservability,
     auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+    product_logic: ProductLogic<ProductRepository>,
     user_logic: UserLogic<UserRepository>,
 }
 
@@ -36,6 +38,7 @@ impl SharedState {
         google_auth_service: GoogleAuthService,
         http_observability: HttpObservability,
         auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+        product_logic: ProductLogic<ProductRepository>,
         user_logic: UserLogic<UserRepository>,
     ) -> Self {
         Self {
@@ -44,6 +47,7 @@ impl SharedState {
                 google_auth_service,
                 http_observability,
                 auth_logic,
+                product_logic,
                 user_logic,
             }),
         }
@@ -63,6 +67,10 @@ impl SharedState {
 
     pub fn auth_logic(&self) -> &AuthLogic<UserRepository, UserAuthIdentityRepository> {
         &self.inner.auth_logic
+    }
+
+    pub fn product_logic(&self) -> &ProductLogic<ProductRepository> {
+        &self.inner.product_logic
     }
 
     pub fn user_logic(&self) -> &UserLogic<UserRepository> {

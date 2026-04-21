@@ -10,7 +10,6 @@ use super::{SharedState, middleware};
 
 pub fn build_routes(shared_state: SharedState) -> Router {
     let protected_routes = Router::new()
-        .nest("/products", product::routes())
         .nest("/users", user::routes())
         .layer(from_fn_with_state(
             shared_state.clone(),
@@ -21,6 +20,7 @@ pub fn build_routes(shared_state: SharedState) -> Router {
         .route("/", get(index))
         .nest("/auth", auth::routes())
         .nest("/health", health::routes())
+        .nest("/products", product::routes())
         .merge(protected_routes)
         .layer(from_fn_with_state(
             shared_state.clone(),

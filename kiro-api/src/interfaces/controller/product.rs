@@ -3,47 +3,68 @@ use axum::{
     extract::{Path, State},
     routing::get,
 };
-use serde::Serialize;
 
-use super::super::SharedState;
+use crate::{
+    application::product::ProductLogicError,
+    interfaces::{
+        SharedState,
+        dto::product::{ProductDetailResponse, ProductListResponse},
+        error::AppError,
+    },
+};
 
 pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/", get(list_products))
-        .route("/{product_id}", get(get_product))
+        .route("/{product_code}", get(get_product))
 }
 
-async fn list_products(State(_state): State<SharedState>) -> Json<ProductListResponse> {
-    Json(ProductListResponse {
-        message: "products collection route skeleton",
-        items: Vec::new(),
-    })
+async fn list_products(
+    State(state): State<SharedState>,
+) -> Result<Json<ProductListResponse>, AppError> {
+    let products = state
+        .product_logic()
+        .list()
+        .await
+        .map_err(ProductAppError::from)
+        .map_err(AppError::from)?;
+
+    Ok(Json(ProductListResponse::from(products)))
 }
 
 async fn get_product(
-    State(_state): State<SharedState>,
-    Path(product_id): Path<String>,
-) -> Json<ProductDetailResponse> {
-    Json(ProductDetailResponse {
-        message: "product resource route skeleton",
-        product_id,
-    })
+    State(state): State<SharedState>,
+    Path(product_code): Path<String>,
+) -> Result<Json<ProductDetailResponse>, AppError> {
+    let product = state
+        .product_logic()
+        .get(&product_code)
+        .await
+        .map_err(ProductAppError::from)
+        .map_err(AppError::from)?;
+
+    Ok(Json(ProductDetailResponse::from(product)))
 }
 
-#[derive(Serialize)]
-struct ProductListResponse {
-    message: &'static str,
-    items: Vec<ProductSummary>,
+struct ProductAppError(anyhow::Error);
+
+impl From<anyhow::Error> for ProductAppError {
+    fn from(value: anyhow::Error) -> Self {
+        Self(value)
+    }
 }
 
-#[derive(Serialize)]
-struct ProductSummary {
-    id: String,
-    name: String,
-}
+impl From<ProductAppError> for AppError {
+    fn from(value: ProductAppError) -> Self {
+        if let Some(error) = value.0.downcast_ref::<ProductLogicError>() {
+            return match error {
+                ProductLogicError::ProductNotFound { product_code } => AppError::not_found(
+                    "product_not_found",
+                    format!("product {product_code} not found"),
+                ),
+            };
+        }
 
-#[derive(Serialize)]
-struct ProductDetailResponse {
-    message: &'static str,
-    product_id: String,
+        AppError::internal_server_error("product_logic_error", value.0.to_string())
+    }
 }

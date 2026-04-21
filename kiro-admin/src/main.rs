@@ -5,6 +5,7 @@ use tokio::signal;
 use crate::{
     bootstrap::{
         auth::build_auth_logic,
+        product::build_product_logic,
         user::{build_admin_user_logic, build_user_logic},
     },
     infrastructure::{
@@ -43,6 +44,7 @@ async fn main() {
 
     let auth_logic = build_auth_logic(pg_pool.clone());
     let admin_user_logic = build_admin_user_logic(pg_pool.clone());
+    let product_logic = build_product_logic(pg_pool.clone());
     let user_logic = build_user_logic(pg_pool.clone());
 
     let shared_state = SharedState::new(
@@ -50,6 +52,7 @@ async fn main() {
         telemetry.http_observability.clone(),
         auth_logic,
         admin_user_logic,
+        product_logic,
         user_logic,
     );
     let app = build_routes(shared_state);

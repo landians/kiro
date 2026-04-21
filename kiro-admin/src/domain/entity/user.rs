@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::fmt::{Display, Formatter};
+
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 
@@ -55,5 +57,11 @@ impl AccountStatus {
             "banned" => Ok(Self::Banned),
             other => Err(anyhow!("unsupported account status: {other}")),
         }
+    }
+}
+
+impl Display for AccountStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }

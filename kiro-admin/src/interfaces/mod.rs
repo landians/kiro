@@ -8,13 +8,15 @@ use std::sync::Arc;
 use crate::{
     application::{
         auth::AuthLogic,
+        product::ProductLogic,
         user::{AdminUserLogic, UserLogic},
     },
     infrastructure::{
         auth::{AuthService, password::PasswordService},
         observability::HttpObservability,
         persistence::{
-            admin_user_repository::AdminUserRepository, user_repository::UserRepository,
+            admin_user_repository::AdminUserRepository, product_repository::ProductRepository,
+            user_repository::UserRepository,
         },
     },
 };
@@ -29,6 +31,7 @@ struct SharedStateInner {
     http_observability: HttpObservability,
     auth_logic: AuthLogic<AdminUserRepository, PasswordService>,
     admin_user_logic: AdminUserLogic<AdminUserRepository>,
+    product_logic: ProductLogic<ProductRepository>,
     user_logic: UserLogic<UserRepository>,
 }
 
@@ -38,6 +41,7 @@ impl SharedState {
         http_observability: HttpObservability,
         auth_logic: AuthLogic<AdminUserRepository, PasswordService>,
         admin_user_logic: AdminUserLogic<AdminUserRepository>,
+        product_logic: ProductLogic<ProductRepository>,
         user_logic: UserLogic<UserRepository>,
     ) -> Self {
         Self {
@@ -46,6 +50,7 @@ impl SharedState {
                 http_observability,
                 auth_logic,
                 admin_user_logic,
+                product_logic,
                 user_logic,
             }),
         }
@@ -65,6 +70,10 @@ impl SharedState {
 
     pub fn admin_user_logic(&self) -> &AdminUserLogic<AdminUserRepository> {
         &self.inner.admin_user_logic
+    }
+
+    pub fn product_logic(&self) -> &ProductLogic<ProductRepository> {
+        &self.inner.product_logic
     }
 
     pub fn user_logic(&self) -> &UserLogic<UserRepository> {

@@ -53,7 +53,7 @@ impl From<UserStatusQuery> for AccountStatus {
 
 #[derive(Debug, Serialize)]
 pub struct UserListResponse {
-    pub items: Vec<UserListItemDto>,
+    pub items: Vec<UserDto>,
     pub page: u64,
     pub page_size: u64,
     pub total: u64,
@@ -62,7 +62,7 @@ pub struct UserListResponse {
 impl From<PaginatedUsers> for UserListResponse {
     fn from(value: PaginatedUsers) -> Self {
         Self {
-            items: value.items.into_iter().map(UserListItemDto::from).collect(),
+            items: value.items.into_iter().map(UserDto::from).collect(),
             page: value.page,
             page_size: value.page_size,
             total: value.total,
@@ -71,19 +71,21 @@ impl From<PaginatedUsers> for UserListResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct UserListItemDto {
+pub struct UserDto {
     pub uid: i64,
     pub primary_email: Option<String>,
     pub email_verified: bool,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub account_status: &'static str,
+    pub frozen_at: Option<String>,
+    pub banned_at: Option<String>,
     pub last_login_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-impl From<User> for UserListItemDto {
+impl From<User> for UserDto {
     fn from(value: User) -> Self {
         Self {
             uid: value.id,
@@ -92,11 +94,26 @@ impl From<User> for UserListItemDto {
             display_name: value.display_name,
             avatar_url: value.avatar_url,
             account_status: value.account_status.as_str(),
+            frozen_at: value.frozen_at.map(|time| time.to_rfc3339()),
+            banned_at: value.banned_at.map(|time| time.to_rfc3339()),
             last_login_at: value.last_login_at.map(|time| time.to_rfc3339()),
             created_at: value.created_at.to_rfc3339(),
             updated_at: value.updated_at.to_rfc3339(),
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserStatusRequest {
+    pub account_status: ManageableUserStatus,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManageableUserStatus {
+    Active,
+    Frozen,
+    Banned,
 }
 
 fn normalize_query_text(value: Option<String>) -> Option<String> {

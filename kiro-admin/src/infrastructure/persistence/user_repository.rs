@@ -4,7 +4,7 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Row, postgres::PgRow};
 use crate::domain::{
     entity::user::{AccountStatus, User},
     repository::user_repository::{
-        ListUsers, PaginatedUsers, UserRepository as UserRepositoryTrait,
+        ListUsers, PaginatedUsers, UpdateUserStatus, UserRepository as UserRepositoryTrait,
     },
 };
 
@@ -25,6 +25,45 @@ const USER_COLUMNS_SQL: &str = r#"
     last_login_at,
     created_at,
     updated_at
+"#;
+
+const FIND_USER_BY_ID_SQL: &str = r#"
+    select
+        id,
+        primary_email,
+        email_verified,
+        display_name,
+        avatar_url,
+        account_status,
+        frozen_at,
+        banned_at,
+        last_login_at,
+        created_at,
+        updated_at
+    from users
+    where id = $1
+"#;
+
+const UPDATE_USER_STATUS_SQL: &str = r#"
+    update users
+    set
+        account_status = $2,
+        frozen_at = $3,
+        banned_at = $4,
+        updated_at = now()
+    where id = $1
+    returning
+        id,
+        primary_email,
+        email_verified,
+        display_name,
+        avatar_url,
+        account_status,
+        frozen_at,
+        banned_at,
+        last_login_at,
+        created_at,
+        updated_at
 "#;
 
 impl UserRepository {
@@ -148,5 +187,30 @@ impl UserRepositoryTrait for UserRepository {
             page: query.page,
             page_size: query.page_size,
         })
+    }
+
+    #[tracing::instrument(skip(self), fields(user_id = id))]
+    async fn find_by_id(&self, id: i64) -> Result<Option<User>> {
+        let row = sqlx::query(FIND_USER_BY_ID_SQL)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to query user by id")?;
+
+        row.map(Self::map_user).transpose()
+    }
+
+    #[tracing::instrument(skip(self, update), fields(user_id = id, user.account_status = %update.account_status))]
+    async fn update_status(&self, id: i64, update: UpdateUserStatus) -> Result<User> {
+        let row = sqlx::query(UPDATE_USER_STATUS_SQL)
+            .bind(id)
+            .bind(update.account_status.as_str())
+            .bind(update.frozen_at)
+            .bind(update.banned_at)
+            .fetch_one(&self.pool)
+            .await
+            .context("failed to update user status")?;
+
+        Self::map_user(row)
     }
 }

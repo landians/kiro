@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 
 use crate::domain::entity::user::{AccountStatus, User};
 
@@ -27,6 +28,15 @@ pub struct PaginatedUsers {
     pub page_size: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateUserStatus {
+    pub account_status: AccountStatus,
+    pub frozen_at: Option<DateTime<Utc>>,
+    pub banned_at: Option<DateTime<Utc>>,
+}
+
 pub trait UserRepository: Send + Sync {
     async fn list(&self, query: &ListUsers) -> Result<PaginatedUsers>;
+    async fn find_by_id(&self, id: i64) -> Result<Option<User>>;
+    async fn update_status(&self, id: i64, update: UpdateUserStatus) -> Result<User>;
 }
