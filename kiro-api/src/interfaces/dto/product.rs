@@ -60,7 +60,6 @@ pub struct ProductPlanDto {
     pub currency_code: String,
     pub amount_minor: i64,
     pub billing_interval: Option<&'static str>,
-    pub billing_interval_count: Option<i32>,
     pub trial_days: i32,
     pub is_default: bool,
 }
@@ -74,7 +73,6 @@ impl From<ProductPlan> for ProductPlanDto {
             currency_code: value.currency_code,
             amount_minor: value.amount_minor,
             billing_interval: value.billing_interval.map(|interval| interval.as_str()),
-            billing_interval_count: value.billing_interval_count,
             trial_days: value.trial_days,
             is_default: value.is_default,
         }

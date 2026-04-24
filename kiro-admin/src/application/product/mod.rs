@@ -87,7 +87,6 @@ where
         self.validate_plan_configuration(
             input.charge_type,
             input.billing_interval,
-            input.billing_interval_count,
             input.trial_days,
         )?;
 
@@ -100,7 +99,6 @@ where
             currency_code: input.currency_code,
             amount_minor: input.amount_minor,
             billing_interval: input.billing_interval,
-            billing_interval_count: input.billing_interval_count,
             trial_days: input.trial_days,
             sort_order: input.sort_order,
             is_default: input.is_default,
@@ -121,15 +119,11 @@ where
 
         let merged_charge_type = input.charge_type.unwrap_or(current_plan.charge_type);
         let merged_billing_interval = input.billing_interval.or(current_plan.billing_interval);
-        let merged_billing_interval_count = input
-            .billing_interval_count
-            .or(current_plan.billing_interval_count);
         let merged_trial_days = input.trial_days.unwrap_or(current_plan.trial_days);
 
         self.validate_plan_configuration(
             merged_charge_type,
             merged_billing_interval,
-            merged_billing_interval_count,
             merged_trial_days,
         )?;
 
@@ -140,7 +134,6 @@ where
             currency_code: input.currency_code.unwrap_or(current_plan.currency_code),
             amount_minor: input.amount_minor.unwrap_or(current_plan.amount_minor),
             billing_interval: merged_billing_interval,
-            billing_interval_count: merged_billing_interval_count,
             trial_days: merged_trial_days,
             sort_order: input.sort_order.unwrap_or(current_plan.sort_order),
             is_default: input.is_default.unwrap_or(current_plan.is_default),
@@ -153,26 +146,21 @@ where
         &self,
         charge_type: ChargeType,
         billing_interval: Option<BillingInterval>,
-        billing_interval_count: Option<i32>,
         trial_days: i32,
     ) -> Result<()> {
         match charge_type {
             ChargeType::Subscription => {
-                if billing_interval.is_none() || billing_interval_count.is_none() {
+                if billing_interval.is_none() {
                     return Err(ProductLogicError::InvalidProductPlanConfiguration {
-                        reason:
-                            "subscription plan requires billing_interval and billing_interval_count"
-                                .to_owned(),
+                        reason: "subscription plan requires billing_interval".to_owned(),
                     }
                     .into());
                 }
             }
             ChargeType::OneTime => {
-                if billing_interval.is_some() || billing_interval_count.is_some() {
+                if billing_interval.is_some() {
                     return Err(ProductLogicError::InvalidProductPlanConfiguration {
-                        reason:
-                            "one_time plan cannot set billing_interval or billing_interval_count"
-                                .to_owned(),
+                        reason: "one_time plan cannot set billing_interval".to_owned(),
                     }
                     .into());
                 }
@@ -218,7 +206,6 @@ pub struct CreateProductPlanInput {
     pub currency_code: String,
     pub amount_minor: i64,
     pub billing_interval: Option<BillingInterval>,
-    pub billing_interval_count: Option<i32>,
     pub trial_days: i32,
     pub sort_order: i32,
     pub is_default: bool,
@@ -231,7 +218,6 @@ pub struct UpdateProductPlanInput {
     pub currency_code: Option<String>,
     pub amount_minor: Option<i64>,
     pub billing_interval: Option<BillingInterval>,
-    pub billing_interval_count: Option<i32>,
     pub trial_days: Option<i32>,
     pub sort_order: Option<i32>,
     pub is_default: Option<bool>,

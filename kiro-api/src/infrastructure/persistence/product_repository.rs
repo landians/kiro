@@ -52,7 +52,6 @@ const LIST_ACTIVE_PRODUCT_PLANS_BY_PRODUCT_ID_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default,
@@ -134,9 +133,6 @@ impl ProductRepository {
                 .as_deref()
                 .map(BillingInterval::from_db)
                 .transpose()?,
-            billing_interval_count: row
-                .try_get("billing_interval_count")
-                .context("failed to decode product_plans.billing_interval_count")?,
             trial_days: row
                 .try_get("trial_days")
                 .context("failed to decode product_plans.trial_days")?,

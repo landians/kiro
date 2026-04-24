@@ -90,7 +90,6 @@ const LIST_PRODUCT_PLANS_BY_PRODUCT_ID_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default,
@@ -112,7 +111,6 @@ const FIND_PRODUCT_PLAN_BY_ID_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default,
@@ -132,12 +130,11 @@ const CREATE_PRODUCT_PLAN_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default
     )
-    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     returning
         id,
         product_id,
@@ -148,7 +145,6 @@ const CREATE_PRODUCT_PLAN_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default,
@@ -165,10 +161,9 @@ const UPDATE_PRODUCT_PLAN_SQL: &str = r#"
         currency_code = $5,
         amount_minor = $6,
         billing_interval = $7,
-        billing_interval_count = $8,
-        trial_days = $9,
-        sort_order = $10,
-        is_default = $11,
+        trial_days = $8,
+        sort_order = $9,
+        is_default = $10,
         updated_at = now()
     where id = $1
     returning
@@ -181,7 +176,6 @@ const UPDATE_PRODUCT_PLAN_SQL: &str = r#"
         currency_code,
         amount_minor,
         billing_interval,
-        billing_interval_count,
         trial_days,
         sort_order,
         is_default,
@@ -259,9 +253,6 @@ impl ProductRepository {
                 .as_deref()
                 .map(BillingInterval::from_db)
                 .transpose()?,
-            billing_interval_count: row
-                .try_get("billing_interval_count")
-                .context("failed to decode product_plans.billing_interval_count")?,
             trial_days: row
                 .try_get("trial_days")
                 .context("failed to decode product_plans.trial_days")?,
@@ -439,7 +430,6 @@ impl ProductRepositoryTrait for ProductRepository {
             .bind(plan.currency_code)
             .bind(plan.amount_minor)
             .bind(plan.billing_interval.map(|value| value.as_str()))
-            .bind(plan.billing_interval_count)
             .bind(plan.trial_days)
             .bind(plan.sort_order)
             .bind(plan.is_default)
@@ -460,7 +450,6 @@ impl ProductRepositoryTrait for ProductRepository {
             .bind(plan.currency_code)
             .bind(plan.amount_minor)
             .bind(plan.billing_interval.map(|value| value.as_str()))
-            .bind(plan.billing_interval_count)
             .bind(plan.trial_days)
             .bind(plan.sort_order)
             .bind(plan.is_default)

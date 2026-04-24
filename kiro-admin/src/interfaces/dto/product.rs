@@ -102,8 +102,6 @@ pub struct CreateProductPlanRequest {
     #[validate(range(min = 0))]
     pub amount_minor: i64,
     pub billing_interval: Option<BillingIntervalQuery>,
-    #[validate(range(min = 1))]
-    pub billing_interval_count: Option<i32>,
     #[validate(range(min = 0))]
     pub trial_days: Option<i32>,
     pub sort_order: Option<i32>,
@@ -123,7 +121,6 @@ impl CreateProductPlanRequest {
             currency_code: self.currency_code.trim().to_uppercase(),
             amount_minor: self.amount_minor,
             billing_interval: self.billing_interval.map(Into::into),
-            billing_interval_count: self.billing_interval_count,
             trial_days: self.trial_days.unwrap_or(0),
             sort_order: self.sort_order.unwrap_or(0),
             is_default: self.is_default.unwrap_or(false),
@@ -143,8 +140,6 @@ pub struct UpdateProductPlanRequest {
     #[validate(range(min = 0))]
     pub amount_minor: Option<i64>,
     pub billing_interval: Option<BillingIntervalQuery>,
-    #[validate(range(min = 1))]
-    pub billing_interval_count: Option<i32>,
     #[validate(range(min = 0))]
     pub trial_days: Option<i32>,
     pub sort_order: Option<i32>,
@@ -160,7 +155,6 @@ impl UpdateProductPlanRequest {
             currency_code: self.currency_code.map(|value| value.trim().to_uppercase()),
             amount_minor: self.amount_minor,
             billing_interval: self.billing_interval.map(Into::into),
-            billing_interval_count: self.billing_interval_count,
             trial_days: self.trial_days,
             sort_order: self.sort_order,
             is_default: self.is_default,
@@ -207,8 +201,6 @@ impl From<ChargeTypeQuery> for ChargeType {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BillingIntervalQuery {
-    Day,
-    Week,
     Month,
     Year,
 }
@@ -216,8 +208,6 @@ pub enum BillingIntervalQuery {
 impl From<BillingIntervalQuery> for BillingInterval {
     fn from(value: BillingIntervalQuery) -> Self {
         match value {
-            BillingIntervalQuery::Day => Self::Day,
-            BillingIntervalQuery::Week => Self::Week,
             BillingIntervalQuery::Month => Self::Month,
             BillingIntervalQuery::Year => Self::Year,
         }
@@ -296,7 +286,6 @@ pub struct ProductPlanDto {
     pub currency_code: String,
     pub amount_minor: i64,
     pub billing_interval: Option<&'static str>,
-    pub billing_interval_count: Option<i32>,
     pub trial_days: i32,
     pub sort_order: i32,
     pub is_default: bool,
@@ -316,7 +305,6 @@ impl From<ProductPlan> for ProductPlanDto {
             currency_code: value.currency_code,
             amount_minor: value.amount_minor,
             billing_interval: value.billing_interval.map(|value| value.as_str()),
-            billing_interval_count: value.billing_interval_count,
             trial_days: value.trial_days,
             sort_order: value.sort_order,
             is_default: value.is_default,
@@ -395,24 +383,19 @@ fn validate_create_product_plan_request(
     }
 
     if matches!(request.charge_type, ChargeTypeQuery::Subscription)
-        && (request.billing_interval.is_none() || request.billing_interval_count.is_none())
+        && request.billing_interval.is_none()
     {
         let mut error = validator::ValidationError::new("missing_subscription_billing_fields");
-        error.message =
-            Some("subscription plan requires billing_interval and billing_interval_count".into());
+        error.message = Some("subscription plan requires billing_interval".into());
         return Err(error);
     }
 
     if matches!(request.charge_type, ChargeTypeQuery::OneTime)
-        && (request.billing_interval.is_some()
-            || request.billing_interval_count.is_some()
-            || request.trial_days.unwrap_or(0) != 0)
+        && (request.billing_interval.is_some() || request.trial_days.unwrap_or(0) != 0)
     {
         let mut error = validator::ValidationError::new("invalid_one_time_plan_fields");
-        error.message = Some(
-            "one_time plan cannot set billing_interval, billing_interval_count, or non-zero trial_days"
-                .into(),
-        );
+        error.message =
+            Some("one_time plan cannot set billing_interval or non-zero trial_days".into());
         return Err(error);
     }
 
@@ -428,7 +411,6 @@ fn validate_update_product_plan_request(
         && request.currency_code.is_none()
         && request.amount_minor.is_none()
         && request.billing_interval.is_none()
-        && request.billing_interval_count.is_none()
         && request.trial_days.is_none()
         && request.sort_order.is_none()
         && request.is_default.is_none()

@@ -8,7 +8,6 @@
 
 - `kiro-api/migrations/20260323_000001_create_users.sql`
 - `kiro-api/migrations/20260421_000002_create_products_and_billing_tables.sql`
-- `kiro-api/migrations/20260424_000003_add_product_image_url_to_products.sql`
 - `kiro-admin/migrations/20260404_000001_create_admin_users.sql`
 
 如果后续新增、修改或删除表结构，需要同步更新本文档，保持文档与 migration 一致。
@@ -131,8 +130,7 @@
 | `charge_type` | `varchar(32)` | 收费方式，允许 `one_time` 或 `subscription`。 |
 | `currency_code` | `varchar(3)` | 三位大写货币代码，例如 `CNY`、`USD`。 |
 | `amount_minor` | `bigint` | 以最小货币单位表示的金额，例如分、cent。 |
-| `billing_interval` | `varchar(16)` | 订阅计费周期单位，允许 `day`、`week`、`month`、`year`；一次性付费为空。 |
-| `billing_interval_count` | `integer` | 计费周期数量，例如每 1 月、每 1 年；一次性付费为空。 |
+| `billing_interval` | `varchar(16)` | 订阅计费周期单位，允许 `month`、`year`；一次性付费为空。 |
 | `trial_days` | `integer` | 试用天数，仅订阅计划使用。 |
 | `sort_order` | `integer` | 同一商品下计划排序值。 |
 | `is_default` | `boolean` | 是否为默认推荐计划。 |

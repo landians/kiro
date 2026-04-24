@@ -57,7 +57,7 @@ async fn update_user(
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<UserDto>, AppError> {
     request.validate()?;
-    
+
     let user = state
         .user_logic()
         .update(authenticated_user.user_id, build_update_user(request))

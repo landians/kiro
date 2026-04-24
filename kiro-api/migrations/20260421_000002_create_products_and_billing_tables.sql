@@ -2,7 +2,7 @@ create table products (
     id bigint generated always as identity,
     product_code varchar(64) not null,
     product_name varchar(128) not null,
-    product_image_url text null;
+    product_image_url text null,
     product_description text null,
     product_status varchar(32) not null default 'draft',
     created_at timestamptz not null default now(),
@@ -24,7 +24,6 @@ create table product_plans (
     currency_code varchar(3) not null,
     amount_minor bigint not null,
     billing_interval varchar(16) null,
-    billing_interval_count integer null,
     trial_days integer not null default 0,
     sort_order integer not null default 0,
     is_default boolean not null default false,
@@ -54,23 +53,18 @@ create table product_plans (
         trial_days >= 0
     ),
     constraint ck_product_plans_billing_interval check (
-        billing_interval in ('day', 'week', 'month', 'year')
+        billing_interval in ('month', 'year')
         or billing_interval is null
-    ),
-    constraint ck_product_plans_billing_interval_count check (
-        billing_interval_count is null or billing_interval_count > 0
     ),
     constraint ck_product_plans_subscription_fields check (
         (
             charge_type = 'subscription'
             and billing_interval is not null
-            and billing_interval_count is not null
         )
         or
         (
             charge_type = 'one_time'
             and billing_interval is null
-            and billing_interval_count is null
             and trial_days = 0
         )
     )

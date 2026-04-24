@@ -28,7 +28,6 @@ pub struct ProductPlan {
     pub currency_code: String,
     pub amount_minor: i64,
     pub billing_interval: Option<BillingInterval>,
-    pub billing_interval_count: Option<i32>,
     pub trial_days: i32,
     pub sort_order: i32,
     pub is_default: bool,
@@ -102,8 +101,6 @@ impl Display for ChargeType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingInterval {
-    Day,
-    Week,
     Month,
     Year,
 }
@@ -111,8 +108,6 @@ pub enum BillingInterval {
 impl BillingInterval {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Day => "day",
-            Self::Week => "week",
             Self::Month => "month",
             Self::Year => "year",
         }
@@ -120,8 +115,6 @@ impl BillingInterval {
 
     pub fn from_db(value: &str) -> Result<Self> {
         match value {
-            "day" => Ok(Self::Day),
-            "week" => Ok(Self::Week),
             "month" => Ok(Self::Month),
             "year" => Ok(Self::Year),
             other => Err(anyhow!("unsupported billing interval: {other}")),
