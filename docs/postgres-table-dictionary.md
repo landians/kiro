@@ -8,6 +8,8 @@
 
 - `kiro-api/migrations/20260323_000001_create_users.sql`
 - `kiro-api/migrations/20260421_000002_create_products_and_billing_tables.sql`
+- `kiro-api/migrations/20260424_000003_create_payment_orders.sql`
+- `kiro-api/migrations/20260424_000004_create_payment_webhook_events.sql`
 - `kiro-admin/migrations/20260404_000001_create_admin_users.sql`
 
 如果后续新增、修改或删除表结构，需要同步更新本文档，保持文档与 migration 一致。
@@ -20,6 +22,8 @@
 - `user_auth_identities`
 - `products`
 - `product_plans`
+- `payment_orders`
+- `payment_webhook_events`
 - `admin_users`
 
 ## 3. 关系总览
@@ -28,6 +32,8 @@
 - `user_auth_identities` 记录用户与第三方身份提供商之间的绑定关系。
 - `products` 定义商品。
 - `product_plans` 定义商品下的可售卖计划，支持一次性付费和订阅制。
+- `payment_orders` 记录用户发起支付时生成的订单、价格快照以及支付结果状态。
+- `payment_webhook_events` 记录支付渠道推送的 webhook 事件、去重状态和处理结果。
 - `admin_users` 是后台管理员账号表，与普通用户表独立。
 
 ## 4. 表说明
@@ -137,7 +143,86 @@
 | `created_at` | `timestamptz` | 创建时间。 |
 | `updated_at` | `timestamptz` | 更新时间。 |
 
-### 4.5 `admin_users`
+### 4.5 `payment_orders`
+
+用途：记录用户发起购买后生成的支付订单，承担下单时价格快照、支付渠道绑定、支付状态流转和后续 webhook 回写落点。
+
+核心约束：
+
+- `order_no` 全局唯一，作为对外可暴露的稳定订单号。
+- `user_id`、`product_id`、`product_plan_id` 分别外键引用 `users.id`、`products.id`、`product_plans.id`。
+- `payment_provider` 当前只允许 `stripe`、`creem`。
+- `order_status` 当前允许 `pending`、`paid`、`failed`、`canceled`、`refunded`。
+- 下单时保存商品、计划、金额、币种、收费方式等价格快照，避免历史订单受后续改价影响。
+- 通过部分唯一索引约束同一 provider 下的 `provider_checkout_session_id` 与 `provider_payment_id` 不重复。
+
+字段说明：
+
+| 字段名 | 类型 | 含义 |
+| --- | --- | --- |
+| `id` | `bigint` | 订单主键。 |
+| `order_no` | `varchar(64)` | 对外稳定订单号。 |
+| `user_id` | `bigint` | 下单用户 ID，对应 `users.id`。 |
+| `product_id` | `bigint` | 下单时关联的商品 ID，对应 `products.id`。 |
+| `product_plan_id` | `bigint` | 下单时关联的商品计划 ID，对应 `product_plans.id`。 |
+| `payment_provider` | `varchar(32)` | 支付渠道，当前允许 `stripe`、`creem`。 |
+| `order_status` | `varchar(32)` | 订单状态，当前允许 `pending`、`paid`、`failed`、`canceled`、`refunded`。 |
+| `provider_checkout_session_id` | `varchar(255)` | 第三方支付渠道返回的 checkout/session 标识。 |
+| `provider_payment_id` | `varchar(255)` | 第三方支付渠道的最终支付标识，例如 payment intent / payment id。 |
+| `provider_customer_id` | `varchar(255)` | 第三方支付渠道中的客户标识。 |
+| `product_code` | `varchar(64)` | 下单时的商品编码快照。 |
+| `product_name` | `varchar(128)` | 下单时的商品名称快照。 |
+| `product_image_url` | `text` | 下单时的商品图片地址快照。 |
+| `plan_code` | `varchar(64)` | 下单时的计划编码快照。 |
+| `plan_name` | `varchar(128)` | 下单时的计划名称快照。 |
+| `charge_type` | `varchar(32)` | 收费方式快照，允许 `one_time` 或 `subscription`。 |
+| `currency_code` | `varchar(3)` | 订单币种快照，三位大写货币代码。 |
+| `amount_minor` | `bigint` | 订单金额快照，按最小货币单位存储。 |
+| `billing_interval` | `varchar(16)` | 订阅周期快照，允许 `month`、`year`；一次性订单为空。 |
+| `trial_days` | `integer` | 试用天数快照，仅订阅订单使用。 |
+| `failure_code` | `varchar(64)` | 支付失败或取消时的业务/渠道错误码。 |
+| `failure_message` | `text` | 支付失败或取消时的补充说明。 |
+| `expires_at` | `timestamptz` | 订单或 checkout session 过期时间。 |
+| `paid_at` | `timestamptz` | 订单确认支付成功时间。 |
+| `failed_at` | `timestamptz` | 订单确认支付失败时间。 |
+| `canceled_at` | `timestamptz` | 订单被取消时间。 |
+| `refunded_at` | `timestamptz` | 订单确认退款完成时间。 |
+| `created_at` | `timestamptz` | 创建时间。 |
+| `updated_at` | `timestamptz` | 更新时间。 |
+
+### 4.6 `payment_webhook_events`
+
+用途：记录支付渠道推送的 webhook 事件，承担事件去重、处理状态跟踪、失败重试和问题排查的“收件箱”职责。
+
+核心约束：
+
+- `(payment_provider, provider_event_id)` 唯一，保证同一渠道事件只会被落库一次。
+- `payment_order_id` 可为空，因为部分 webhook 在落库时可能暂时还无法关联到本地订单。
+- `processing_status` 当前允许 `received`、`processing`、`processed`、`failed`、`ignored`。
+- `payload` 使用 `jsonb` 保存渠道原始事件内容，适合作为不稳定的外部扩展数据。
+- 通过处理状态索引与事件类型索引支持异步消费、重试与排查。
+
+字段说明：
+
+| 字段名 | 类型 | 含义 |
+| --- | --- | --- |
+| `id` | `bigint` | webhook 事件记录主键。 |
+| `payment_order_id` | `bigint` | 关联的本地支付订单 ID，对应 `payment_orders.id`；无法立即关联时可为空。 |
+| `payment_provider` | `varchar(32)` | 事件来源支付渠道，当前允许 `stripe`、`creem`。 |
+| `provider_event_id` | `varchar(255)` | 渠道侧 webhook 事件唯一标识。 |
+| `event_type` | `varchar(128)` | 渠道侧事件类型，例如 `checkout.session.completed`。 |
+| `event_object_id` | `varchar(255)` | 事件中主资源对象的标识，例如 session / payment intent / invoice id。 |
+| `processing_status` | `varchar(32)` | 处理状态，当前允许 `received`、`processing`、`processed`、`failed`、`ignored`。 |
+| `retry_count` | `integer` | 当前事件已尝试处理的次数。 |
+| `payload` | `jsonb` | 渠道原始 webhook 事件负载。 |
+| `error_message` | `text` | 最近一次处理失败时的错误信息。 |
+| `received_at` | `timestamptz` | 系统收到该 webhook 的时间。 |
+| `processed_at` | `timestamptz` | 成功处理完成时间。 |
+| `last_error_at` | `timestamptz` | 最近一次处理失败时间。 |
+| `created_at` | `timestamptz` | 创建时间。 |
+| `updated_at` | `timestamptz` | 更新时间。 |
+
+### 4.7 `admin_users`
 
 用途：保存后台管理员账号信息，与普通用户体系独立。
 

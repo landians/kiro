@@ -1,25 +1,24 @@
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    routing::get,
-};
+use axum::{Extension, Json, Router, extract::State, routing::get};
 
 use crate::{
     application::user::AdminUserLogicError,
-    interfaces::{SharedState, dto::admin_user::AdminUserDto, error::AppError},
+    interfaces::{
+        SharedState, dto::admin_user::AdminUserDto, error::AppError,
+        middleware::AuthenticatedAdminUser,
+    },
 };
 
 pub fn routes() -> Router<SharedState> {
-    Router::new().route("/{admin_user_id}", get(get_admin_user))
+    Router::new().route("/me", get(get_admin_user))
 }
 
 async fn get_admin_user(
     State(state): State<SharedState>,
-    Path(admin_user_id): Path<i64>,
+    Extension(authenticated_admin_user): Extension<AuthenticatedAdminUser>,
 ) -> Result<Json<AdminUserDto>, AppError> {
     let admin_user = state
         .admin_user_logic()
-        .get(admin_user_id)
+        .get(authenticated_admin_user.admin_user_id)
         .await
         .map_err(AdminUserAppError::from)
         .map_err(AppError::from)?;
