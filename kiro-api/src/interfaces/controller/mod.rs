@@ -1,5 +1,6 @@
 mod auth;
 mod health;
+mod order;
 mod product;
 mod user;
 
@@ -10,6 +11,7 @@ use super::{SharedState, middleware};
 
 pub fn build_routes(shared_state: SharedState) -> Router {
     let protected_routes = Router::new()
+        .nest("/orders", order::routes())
         .nest("/users", user::routes())
         .layer(from_fn_with_state(
             shared_state.clone(),
@@ -32,12 +34,12 @@ pub fn build_routes(shared_state: SharedState) -> Router {
 async fn index(State(_state): State<SharedState>) -> Json<IndexResponse> {
     Json(IndexResponse {
         service: "kiro",
-        routes: ["/auth", "/health", "/products", "/users"],
+        routes: ["/auth", "/health", "/orders", "/products", "/users"],
     })
 }
 
 #[derive(Serialize)]
 struct IndexResponse {
     service: &'static str,
-    routes: [&'static str; 4],
+    routes: [&'static str; 5],
 }

@@ -58,21 +58,19 @@ async fn update_user(
 ) -> Result<Json<UserDto>, AppError> {
     request.validate()?;
 
+    let input = UpdateUser {
+        display_name: request.display_name,
+        avatar_url: request.avatar_url,
+    };
+
     let user = state
         .user_logic()
-        .update(authenticated_user.user_id, build_update_user(request))
+        .update(authenticated_user.user_id, input)
         .await
         .map_err(UserAppError::from)
         .map_err(AppError::from)?;
 
     Ok(Json(UserDto::from(user)))
-}
-
-fn build_update_user(request: UpdateUserRequest) -> UpdateUser {
-    UpdateUser {
-        display_name: request.display_name,
-        avatar_url: request.avatar_url,
-    }
 }
 
 struct UserAppError(anyhow::Error);

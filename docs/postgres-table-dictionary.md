@@ -94,6 +94,10 @@
 
 用途：定义商品本体，即“卖的是什么”。
 
+补充说明：
+
+- 如需查看 `products` / `product_plans` 与 Stripe、Creem 商品 / 价格模型的映射关系，可参考 `docs/product-catalog-provider-mapping.md`。
+
 核心约束：
 
 - `product_code` 唯一，作为商品的稳定业务编码。
@@ -115,6 +119,10 @@
 ### 4.4 `product_plans`
 
 用途：定义商品的具体售卖计划，即“怎么卖、卖多少钱”，支持一次性付费与订阅制。
+
+补充说明：
+
+- 如需查看 `products` / `product_plans` 与 Stripe、Creem 商品 / 价格模型的映射关系，可参考 `docs/product-catalog-provider-mapping.md`。
 
 核心约束：
 

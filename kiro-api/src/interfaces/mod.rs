@@ -6,11 +6,15 @@ pub mod middleware;
 use std::sync::Arc;
 
 use crate::{
-    application::{auth::AuthLogic, product::ProductLogic, user::UserLogic},
+    application::{
+        auth::AuthLogic, order::OrderLogic, product::ProductLogic,
+        product_purchase::ProductPurchaseLogic, user::UserLogic,
+    },
     infrastructure::{
         auth::{AuthService, GoogleAuthService},
         observability::HttpObservability,
         persistence::{
+            payment_order_repository::PaymentOrderRepository,
             product_repository::ProductRepository,
             user_auth_identity_repository::UserAuthIdentityRepository,
             user_repository::UserRepository,
@@ -28,6 +32,7 @@ struct SharedStateInner {
     google_auth_service: GoogleAuthService,
     http_observability: HttpObservability,
     auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+    order_logic: OrderLogic<ProductPurchaseLogic<ProductRepository>, PaymentOrderRepository>,
     product_logic: ProductLogic<ProductRepository>,
     user_logic: UserLogic<UserRepository>,
 }
@@ -38,6 +43,7 @@ impl SharedState {
         google_auth_service: GoogleAuthService,
         http_observability: HttpObservability,
         auth_logic: AuthLogic<UserRepository, UserAuthIdentityRepository>,
+        order_logic: OrderLogic<ProductPurchaseLogic<ProductRepository>, PaymentOrderRepository>,
         product_logic: ProductLogic<ProductRepository>,
         user_logic: UserLogic<UserRepository>,
     ) -> Self {
@@ -47,6 +53,7 @@ impl SharedState {
                 google_auth_service,
                 http_observability,
                 auth_logic,
+                order_logic,
                 product_logic,
                 user_logic,
             }),
@@ -67,6 +74,12 @@ impl SharedState {
 
     pub fn auth_logic(&self) -> &AuthLogic<UserRepository, UserAuthIdentityRepository> {
         &self.inner.auth_logic
+    }
+
+    pub fn order_logic(
+        &self,
+    ) -> &OrderLogic<ProductPurchaseLogic<ProductRepository>, PaymentOrderRepository> {
+        &self.inner.order_logic
     }
 
     pub fn product_logic(&self) -> &ProductLogic<ProductRepository> {

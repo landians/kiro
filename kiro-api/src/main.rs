@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use tokio::signal;
 
 use crate::{
-    bootstrap::{auth::build_auth_logic, product::build_product_logic, user::build_user_logic},
+    bootstrap::{
+        auth::build_auth_logic, order::build_order_logic, product::build_product_logic,
+        product_purchase::build_product_purchase_logic, user::build_user_logic,
+    },
     infrastructure::{
         auth::{AuthServiceBuilder, GoogleAuthServiceBuilder},
         cache::CacheBuilder,
@@ -54,6 +57,8 @@ async fn main() {
         .expect("Failed to build auth service");
 
     let auth_logic = build_auth_logic(pg_pool.clone());
+    let product_purchase_logic = build_product_purchase_logic(pg_pool.clone());
+    let order_logic = build_order_logic(product_purchase_logic, pg_pool.clone());
     let product_logic = build_product_logic(pg_pool.clone());
     let user_logic = build_user_logic(pg_pool.clone());
 
@@ -62,6 +67,7 @@ async fn main() {
         google_auth_service,
         telemetry.http_observability.clone(),
         auth_logic,
+        order_logic,
         product_logic,
         user_logic,
     );

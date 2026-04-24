@@ -41,6 +41,42 @@ const FIND_ACTIVE_PRODUCT_BY_CODE_SQL: &str = r#"
       and product_status = 'active'
 "#;
 
+const FIND_ACTIVE_PRODUCT_BY_ID_SQL: &str = r#"
+    select
+        id,
+        product_code,
+        product_name,
+        product_description,
+        product_image_url,
+        product_status,
+        created_at,
+        updated_at
+    from products
+    where id = $1
+      and product_status = 'active'
+"#;
+
+const FIND_ACTIVE_PRODUCT_PLAN_BY_CODE_SQL: &str = r#"
+    select
+        id,
+        product_id,
+        plan_code,
+        plan_name,
+        plan_status,
+        charge_type,
+        currency_code,
+        amount_minor,
+        billing_interval,
+        trial_days,
+        sort_order,
+        is_default,
+        created_at,
+        updated_at
+    from product_plans
+    where plan_code = $1
+      and plan_status = 'active'
+"#;
+
 const LIST_ACTIVE_PRODUCT_PLANS_BY_PRODUCT_ID_SQL: &str = r#"
     select
         id,
@@ -165,6 +201,17 @@ impl ProductRepositoryTrait for ProductRepository {
             .collect::<Result<Vec<_>>>()
     }
 
+    #[tracing::instrument(skip(self), fields(product_id = id))]
+    async fn find_active_product_by_id(&self, id: i64) -> Result<Option<Product>> {
+        let row = sqlx::query(FIND_ACTIVE_PRODUCT_BY_ID_SQL)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to query active product by id")?;
+
+        row.map(Self::map_product).transpose()
+    }
+
     #[tracing::instrument(skip(self), fields(product.product_code = product_code))]
     async fn find_active_product_by_code(&self, product_code: &str) -> Result<Option<Product>> {
         let row = sqlx::query(FIND_ACTIVE_PRODUCT_BY_CODE_SQL)
@@ -174,6 +221,17 @@ impl ProductRepositoryTrait for ProductRepository {
             .context("failed to query active product by code")?;
 
         row.map(Self::map_product).transpose()
+    }
+
+    #[tracing::instrument(skip(self), fields(plan.plan_code = plan_code))]
+    async fn find_active_plan_by_code(&self, plan_code: &str) -> Result<Option<ProductPlan>> {
+        let row = sqlx::query(FIND_ACTIVE_PRODUCT_PLAN_BY_CODE_SQL)
+            .bind(plan_code)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to query active product plan by code")?;
+
+        row.map(Self::map_product_plan).transpose()
     }
 
     #[tracing::instrument(skip(self), fields(product_id))]
