@@ -38,6 +38,7 @@ pub struct ProductSummaryDto {
     pub product_code: String,
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
 }
 
 impl From<Product> for ProductSummaryDto {
@@ -46,6 +47,7 @@ impl From<Product> for ProductSummaryDto {
             product_code: value.product_code,
             product_name: value.product_name,
             product_description: value.product_description,
+            product_image_url: value.product_image_url,
         }
     }
 }

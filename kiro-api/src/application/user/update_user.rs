@@ -24,20 +24,7 @@ where
         Self { user_repository }
     }
 
-    pub async fn execute(
-        &self,
-        actor_user_id: i64,
-        user_id: i64,
-        update: UpdateUser,
-    ) -> Result<User> {
-        if actor_user_id != user_id {
-            return Err(UserLogicError::UserUpdateForbidden {
-                actor_user_id,
-                user_id,
-            }
-            .into());
-        }
-
+    pub async fn execute(&self, user_id: i64, update: UpdateUser) -> Result<User> {
         if update.display_name.is_none() && update.avatar_url.is_none() {
             return Err(UserLogicError::EmptyUserUpdate.into());
         }

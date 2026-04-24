@@ -11,6 +11,7 @@ pub struct Product {
     pub product_code: String,
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: CatalogStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

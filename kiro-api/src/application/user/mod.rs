@@ -29,16 +29,9 @@ where
         self.get_user_logic.execute(user_id).await
     }
 
-    #[tracing::instrument(skip(self, update), fields(user_id, actor_user_id))]
-    pub async fn update(
-        &self,
-        actor_user_id: i64,
-        user_id: i64,
-        update: UpdateUser,
-    ) -> Result<User> {
-        self.update_user_logic
-            .execute(actor_user_id, user_id, update)
-            .await
+    #[tracing::instrument(skip(self, update), fields(user_id))]
+    pub async fn update(&self, user_id: i64, update: UpdateUser) -> Result<User> {
+        self.update_user_logic.execute(user_id, update).await
     }
 }
 
@@ -48,6 +41,4 @@ pub enum UserLogicError {
     UserNotFound { user_id: i64 },
     #[error("user update payload cannot be empty")]
     EmptyUserUpdate,
-    #[error("user {actor_user_id} cannot update user {user_id}")]
-    UserUpdateForbidden { actor_user_id: i64, user_id: i64 },
 }

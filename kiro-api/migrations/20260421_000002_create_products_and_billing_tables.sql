@@ -2,6 +2,7 @@ create table products (
     id bigint generated always as identity,
     product_code varchar(64) not null,
     product_name varchar(128) not null,
+    product_image_url text null;
     product_description text null,
     product_status varchar(32) not null default 'draft',
     created_at timestamptz not null default now(),

@@ -46,6 +46,8 @@ pub struct CreateProductRequest {
     #[validate(length(max = 128))]
     pub product_name: String,
     pub product_description: Option<String>,
+    #[validate(url)]
+    pub product_image_url: Option<String>,
     pub product_status: Option<CatalogStatusQuery>,
 }
 
@@ -55,6 +57,7 @@ impl CreateProductRequest {
             product_code: self.product_code.trim().to_lowercase(),
             product_name: self.product_name.trim().to_owned(),
             product_description: normalize_optional_text(self.product_description),
+            product_image_url: normalize_optional_text(self.product_image_url),
             product_status: self
                 .product_status
                 .map(Into::into)
@@ -69,6 +72,8 @@ pub struct UpdateProductRequest {
     #[validate(length(max = 128))]
     pub product_name: Option<String>,
     pub product_description: Option<String>,
+    #[validate(url)]
+    pub product_image_url: Option<String>,
     pub product_status: Option<CatalogStatusQuery>,
 }
 
@@ -77,6 +82,7 @@ impl UpdateProductRequest {
         UpdateProductInput {
             product_name: self.product_name.map(|value| value.trim().to_owned()),
             product_description: normalize_optional_text(self.product_description),
+            product_image_url: normalize_optional_text(self.product_image_url),
             product_status: self.product_status.map(Into::into),
         }
     }
@@ -258,6 +264,7 @@ pub struct ProductDto {
     pub product_code: String,
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: &'static str,
     pub created_at: String,
     pub updated_at: String,
@@ -270,6 +277,7 @@ impl From<Product> for ProductDto {
             product_code: value.product_code,
             product_name: value.product_name,
             product_description: value.product_description,
+            product_image_url: value.product_image_url,
             product_status: value.product_status.as_str(),
             created_at: value.created_at.to_rfc3339(),
             updated_at: value.updated_at.to_rfc3339(),
@@ -352,6 +360,7 @@ fn validate_update_product_request(
 ) -> Result<(), validator::ValidationError> {
     if request.product_name.is_none()
         && request.product_description.is_none()
+        && request.product_image_url.is_none()
         && request.product_status.is_none()
     {
         let mut error = validator::ValidationError::new("empty_product_update");

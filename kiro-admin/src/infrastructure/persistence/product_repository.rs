@@ -19,6 +19,7 @@ const PRODUCT_COLUMNS_SQL: &str = r#"
     product_code,
     product_name,
     product_description,
+    product_image_url,
     product_status,
     created_at,
     updated_at
@@ -30,6 +31,7 @@ const FIND_PRODUCT_BY_ID_SQL: &str = r#"
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status,
         created_at,
         updated_at
@@ -42,14 +44,16 @@ const CREATE_PRODUCT_SQL: &str = r#"
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status
     )
-    values ($1, $2, $3, $4)
+    values ($1, $2, $3, $4, $5)
     returning
         id,
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status,
         created_at,
         updated_at
@@ -60,7 +64,8 @@ const UPDATE_PRODUCT_SQL: &str = r#"
     set
         product_name = $2,
         product_description = $3,
-        product_status = $4,
+        product_image_url = $4,
+        product_status = $5,
         updated_at = now()
     where id = $1
     returning
@@ -68,6 +73,7 @@ const UPDATE_PRODUCT_SQL: &str = r#"
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status,
         created_at,
         updated_at
@@ -204,6 +210,9 @@ impl ProductRepository {
             product_description: row
                 .try_get("product_description")
                 .context("failed to decode products.product_description")?,
+            product_image_url: row
+                .try_get("product_image_url")
+                .context("failed to decode products.product_image_url")?,
             product_status: CatalogStatus::from_db(&product_status)?,
             created_at: row
                 .try_get("created_at")
@@ -371,6 +380,7 @@ impl ProductRepositoryTrait for ProductRepository {
             .bind(product.product_code)
             .bind(product.product_name)
             .bind(product.product_description)
+            .bind(product.product_image_url)
             .bind(product.product_status.as_str())
             .fetch_one(&self.pool)
             .await
@@ -385,6 +395,7 @@ impl ProductRepositoryTrait for ProductRepository {
             .bind(id)
             .bind(product.product_name)
             .bind(product.product_description)
+            .bind(product.product_image_url)
             .bind(product.product_status.as_str())
             .fetch_one(&self.pool)
             .await

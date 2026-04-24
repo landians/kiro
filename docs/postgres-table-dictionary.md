@@ -8,6 +8,7 @@
 
 - `kiro-api/migrations/20260323_000001_create_users.sql`
 - `kiro-api/migrations/20260421_000002_create_products_and_billing_tables.sql`
+- `kiro-api/migrations/20260424_000003_add_product_image_url_to_products.sql`
 - `kiro-admin/migrations/20260404_000001_create_admin_users.sql`
 
 如果后续新增、修改或删除表结构，需要同步更新本文档，保持文档与 migration 一致。
@@ -101,6 +102,7 @@
 | `product_code` | `varchar(64)` | 商品稳定编码，例如 `pro`、`team`。 |
 | `product_name` | `varchar(128)` | 商品名称。 |
 | `product_description` | `text` | 商品描述。 |
+| `product_image_url` | `text` | 商品展示图片地址，通常用于商品列表卡片、详情页封面等主图展示。 |
 | `product_status` | `varchar(32)` | 商品状态，允许 `draft`、`active`、`inactive`、`archived`。 |
 | `created_at` | `timestamptz` | 创建时间。 |
 | `updated_at` | `timestamptz` | 更新时间。 |

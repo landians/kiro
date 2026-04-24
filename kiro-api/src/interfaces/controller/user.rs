@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Extension, Path, State},
+    extract::{Extension, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -20,16 +20,16 @@ use crate::{
 pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/logout", post(logout))
-        .route("/{user_id}", get(get_user).patch(update_user))
+        .route("/me", get(get_user).patch(update_user))
 }
 
 async fn get_user(
     State(state): State<SharedState>,
-    Path(user_id): Path<i64>,
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<UserDto>, AppError> {
     let user = state
         .user_logic()
-        .get(user_id)
+        .get(authenticated_user.user_id)
         .await
         .map_err(UserAppError::from)
         .map_err(AppError::from)?;
@@ -54,17 +54,13 @@ async fn logout(
 async fn update_user(
     State(state): State<SharedState>,
     Extension(authenticated_user): Extension<AuthenticatedUser>,
-    Path(user_id): Path<i64>,
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<UserDto>, AppError> {
     request.validate()?;
+    
     let user = state
         .user_logic()
-        .update(
-            authenticated_user.user_id,
-            user_id,
-            build_update_user(request),
-        )
+        .update(authenticated_user.user_id, build_update_user(request))
         .await
         .map_err(UserAppError::from)
         .map_err(AppError::from)?;
@@ -104,13 +100,6 @@ impl From<UserAppError> for AppError {
                 UserLogicError::EmptyUserUpdate => AppError::bad_request(
                     "empty_user_update",
                     "at least one updatable field is required",
-                ),
-                UserLogicError::UserUpdateForbidden {
-                    actor_user_id,
-                    user_id,
-                } => AppError::forbidden(
-                    "user_update_forbidden",
-                    format!("user {actor_user_id} cannot update user {user_id}"),
                 ),
             };
         }

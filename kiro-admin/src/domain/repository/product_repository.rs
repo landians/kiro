@@ -34,6 +34,7 @@ pub struct CreateProduct {
     pub product_code: String,
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: CatalogStatus,
 }
 
@@ -41,6 +42,7 @@ pub struct CreateProduct {
 pub struct UpdateProduct {
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: CatalogStatus,
 }
 

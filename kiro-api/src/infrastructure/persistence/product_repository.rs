@@ -17,6 +17,7 @@ const LIST_ACTIVE_PRODUCTS_SQL: &str = r#"
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status,
         created_at,
         updated_at
@@ -31,6 +32,7 @@ const FIND_ACTIVE_PRODUCT_BY_CODE_SQL: &str = r#"
         product_code,
         product_name,
         product_description,
+        product_image_url,
         product_status,
         created_at,
         updated_at
@@ -83,6 +85,9 @@ impl ProductRepository {
             product_description: row
                 .try_get("product_description")
                 .context("failed to decode products.product_description")?,
+            product_image_url: row
+                .try_get("product_image_url")
+                .context("failed to decode products.product_image_url")?,
             product_status: CatalogStatus::from_db(&product_status)?,
             created_at: row
                 .try_get("created_at")

@@ -46,6 +46,7 @@ where
                 product_code: input.product_code,
                 product_name: input.product_name,
                 product_description: input.product_description,
+                product_image_url: input.product_image_url,
                 product_status: input.product_status,
             })
             .await
@@ -62,6 +63,9 @@ where
             product_description: input
                 .product_description
                 .or(current_product.product_description),
+            product_image_url: input
+                .product_image_url
+                .or(current_product.product_image_url),
             product_status: input
                 .product_status
                 .unwrap_or(current_product.product_status),
@@ -195,12 +199,14 @@ pub struct CreateProductInput {
     pub product_code: String,
     pub product_name: String,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: CatalogStatus,
 }
 
 pub struct UpdateProductInput {
     pub product_name: Option<String>,
     pub product_description: Option<String>,
+    pub product_image_url: Option<String>,
     pub product_status: Option<CatalogStatus>,
 }
 
